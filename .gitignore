@@ -1,0 +1,15 @@
+# caches / build artifacts
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# run artifacts
+tmp/
