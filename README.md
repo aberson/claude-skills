@@ -10,15 +10,25 @@ lightly generalized for sharing.
 
 ## What's inside
 
+Each skill name links to its `SKILL.md`.
+
+**Core pipeline** — plan → build → review → ship:
+
+| Stage | Skills |
+|------|--------|
+| **Planning** | [plan-init](plan-init/SKILL.md) · [plan-feature](plan-feature/SKILL.md) · [plan-review](plan-review/SKILL.md) · [plan-wrap](plan-wrap/SKILL.md) · [plan-merge](plan-merge/SKILL.md) · [plan-trim](plan-trim/SKILL.md) · [plan-expedite](plan-expedite/SKILL.md) |
+| **Building** | [build-step](build-step/SKILL.md) · [build-phase](build-phase/SKILL.md) · [build-queue](build-queue/SKILL.md) |
+| **Review** | [review-deep](review-deep/SKILL.md) · [review-gauntlet](review-gauntlet/SKILL.md) · [review-proof](review-proof/SKILL.md) · [review-uat](review-uat/SKILL.md) |
+| **Repo & docs** | [repo-init](repo-init/SKILL.md) · [repo-sync](repo-sync/SKILL.md) · [repo-update](repo-update/SKILL.md) |
+
+**Supporting**:
+
 | Area | Skills |
 |------|--------|
-| **Planning** | `plan-init` · `plan-feature` · `plan-review` · `plan-wrap` · `plan-merge` · `plan-trim` · `plan-expedite` |
-| **Building** | `build-step` · `build-phase` · `build-queue` · `bug-fix` |
-| **Review** | `review-deep` · `review-gauntlet` · `review-proof` · `review-memories` · `review-uat` |
-| **Repo & docs** | `repo-init` · `repo-sync` · `repo-update` |
-| **User & session** | `user-brainstorm` · `user-draft` · `user-learn` · `user-orient` · `user-pm` · `user-recap` · `user-shakedown` · `user-uat` · `user-walkthrough` · `session-wrap` · `task-handoff` · `context-slim` |
-| **Meta / skill tooling** | `skill-eval-setup` · `skill-evolve` · `skill-iterate` · `test-prune` · `lesson-harvest` · `research-prospect` |
-| **Auth** | `claude-oauth-auth` |
+| **User & session** | [user-fix](user-fix/SKILL.md) · [user-brainstorm](user-brainstorm/SKILL.md) · [user-draft](user-draft/SKILL.md) · [user-learn](user-learn/SKILL.md) · [user-orient](user-orient/SKILL.md) · [user-pm](user-pm/SKILL.md) · [user-recap](user-recap/SKILL.md) · [user-shakedown](user-shakedown/SKILL.md) · [user-uat](user-uat/SKILL.md) · [user-walkthrough](user-walkthrough/SKILL.md) · [session-wrap](session-wrap/SKILL.md) · [task-handoff](task-handoff/SKILL.md) · [research-prospect](research-prospect/SKILL.md) |
+| **Skill tooling** | [skill-eval-setup](skill-eval-setup/SKILL.md) · [skill-evolve](skill-evolve/SKILL.md) · [skill-iterate](skill-iterate/SKILL.md) |
+| **Maintenance & hygiene** | [test-prune](test-prune/SKILL.md) · [lesson-harvest](lesson-harvest/SKILL.md) · [memory-distill](memory-distill/SKILL.md) · [context-slim](context-slim/SKILL.md) |
+| **Reference** | [claude-oauth-auth](claude-oauth-auth/SKILL.md) |
 
 `_shared/` holds resources referenced by several skills.
 
@@ -28,8 +38,9 @@ skills use multi-agent fan-out (parallel reviewers, judge panels, generate-then-
 
 ## Workflows
 
-The table above lists what each skill *is*; this section maps how they **chain together** in
-practice. Every sequence below is a workflow I actually run — commands are copy-pasteable.
+The tables above list what each skill *is*; this section maps how they **chain together** in
+practice. Every sequence below is a workflow I actually run — commands are copy-pasteable. The
+detailed write-ups are collapsed; click a heading to expand it.
 
 Two notes on reading the maps:
 
@@ -78,19 +89,20 @@ Ordering matters in two places:
 
 | Situation | Start with |
 |---|---|
-| Brand-new project, no code yet | `/plan-init` → [workflow 1](#1-new-project--shipped-v1) |
-| Add a feature to an existing project | `/plan-feature` → [workflow 2](#2-feature-on-an-existing-project) |
-| One well-scoped change, no plan needed | `/build-step` → [workflow 3](#3-one-off-change-no-plan) |
-| Something is broken | `/bug-fix` → [workflow 4](#4-bug-fix) |
-| Review a diff or PR | `/review-gauntlet` or `/review-deep` → [workflow 5](#5-reviewing-a-diff-on-its-own) |
-| A feature just built needs human acceptance | [workflow 6](#6-acceptance-testing-uat) |
-| Several phases ready; run them overnight | `/build-queue` → [workflow 7](#7-unattended-overnight-runs) |
-| "Where were we?" / context filling up | [workflow 8](#8-session--context-management) |
-| Plan has drifted or two plans overlap | [workflow 9](#9-plan-maintenance) |
-| Improve the skills themselves | [workflow 10](#10-the-skill-self-improvement-loop) |
-| Explore an idea or learn a topic | [workflow 11](#11-ideation-learning-research) |
+| Brand-new project, no code yet | `/plan-init` — §1 |
+| Add a feature to an existing project | `/plan-feature` — §2 |
+| One well-scoped change, no plan needed | `/build-step` — §3 |
+| Stuck in a loop on a bug with the agent | `/user-fix` — §4 |
+| Review a diff or PR | `/review-gauntlet` or `/review-deep` — §5 |
+| A feature just built needs human acceptance | §6 |
+| Several phases ready; run them overnight | `/build-queue` — §7 |
+| "Where were we?" / context filling up | §8 |
+| Plan drifted, or survey what to do next | §9 |
+| Improve the skills or the workspace's memory | §10 |
+| Explore an idea or learn a topic | §11 |
 
-### 1. New project → shipped v1
+<details>
+<summary><strong>1. New project → shipped v1</strong></summary>
 
 ```
 /plan-init                          # structured conversation → plan.md
@@ -117,7 +129,10 @@ Then wrap the phase:
   posts progress to the GitHub issues, and only halts for five legitimate reasons (quality-gate
   hard fail, wait-type step, merge conflict, bad conditional predicate, stop-and-audit).
 
-### 2. Feature on an existing project
+</details>
+
+<details>
+<summary><strong>2. Feature on an existing project</strong></summary>
 
 Same spine, different front door:
 
@@ -142,7 +157,10 @@ Prefer the à-la-carte version when you want to inspect between stages:
   the doc is *self-contained* for a model with zero conversation history (issue bodies and
   autonomous builds depend on that).
 
-### 3. One-off change, no plan
+</details>
+
+<details>
+<summary><strong>3. One-off change, no plan</strong></summary>
 
 ```
 /build-step --problem "<what to build or fix>" [--issue N]
@@ -155,19 +173,27 @@ One skill, three independent knobs:
   review-gauntlet agents; `runtime` = 3 evidence-based reviewers; `full` = all seven.
 - `--ui --start-cmd "<cmd>" --url <url>` — Playwright evidence capture for frontend steps.
 
-### 4. Bug fix
+</details>
+
+<details>
+<summary><strong>4. Getting unstuck on a bug (user-fix)</strong></summary>
 
 ```
-/bug-fix --symptom '<exact error / log line / misbehavior>'
+/user-fix --symptom '<exact error / log line / misbehavior>'
 ```
 
-- Forces primary-source investigation and an **independent reproduction before any code change**
-  (built to break the run-command → paste-output loop), then delegates the fix to `build-step`
-  and re-runs the original repro to prove the symptom is gone.
-- `--triage investigate-only` stops after the diagnosis block — useful when you want the root
-  cause but not yet the fix.
+- Reach for it when a bug keeps **circling between you and the agent** — command-paste back-and-forth
+  that isn't converging. It forces primary-source investigation and an **independent reproduction
+  before any code change**, then delegates the fix to `build-step` and re-runs the original repro to
+  prove the symptom is gone.
+- It's operator-invoked when *you're* stuck, not a plan-driven step — which is why it lives with the
+  `user-*` skills rather than the `build-*` pipeline. (It still writes real code via `build-step`.)
+- `--triage investigate-only` stops after the diagnosis block — root cause without the fix.
 
-### 5. Reviewing a diff on its own
+</details>
+
+<details>
+<summary><strong>5. Reviewing a diff on its own</strong></summary>
 
 Both review skills also run standalone, outside `build-step`:
 
@@ -182,7 +208,10 @@ Both review skills also run standalone, outside `build-step`:
   be dropped. Invoke it directly for "are you sure?" moments — audits, debugging, architecture
   claims.
 
-### 6. Acceptance testing (UAT)
+</details>
+
+<details>
+<summary><strong>6. Acceptance testing (UAT)</strong></summary>
 
 After a build, human-facing verification splits by whether a test script exists.
 
@@ -206,7 +235,10 @@ After a build, human-facing verification splits by whether a test script exists.
 - Anything needing human judgment is escalated with evidence, never guessed.
 - Finish with `/repo-update` to commit the fixes and file the logged issues.
 
-### 7. Unattended overnight runs
+</details>
+
+<details>
+<summary><strong>7. Unattended overnight runs</strong></summary>
 
 ```
 /build-queue --queue <path>         # one line per phase plan
@@ -218,11 +250,15 @@ After a build, human-facing verification splits by whether a test script exists.
   retries at 3am. A kill-switch file (`.build-queue-killswitch`) is the only mid-run control.
 - You get a morning summary; run `/repo-update` per shipped phase over coffee.
 
-### 8. Session & context management
+</details>
+
+<details>
+<summary><strong>8. Session &amp; context management</strong></summary>
 
 ```
 /user-recap                         # ~150-word thread refresh: problem / tried / still to do
 /user-orient                        # full re-orientation: verified vs not, asides, recommendation (read-only)
+/user-draft <rough thoughts>        # polish a rough idea into a reusable prompt or a /goal condition
 /task-handoff --loop                # durable checkpoint mid-task (~5s)
 /task-handoff --next-task <label>   # save + push at a task boundary, keep working
 /task-handoff                       # bare = --resume: orientation block from the last checkpoint
@@ -233,66 +269,80 @@ After a build, human-facing verification splits by whether a test script exists.
 - The doctrine is *native context management first*: auto-compaction and goal-arming handle most
   sessions, so the default is to keep working in one window. `task-handoff` covers in-window
   transitions; `session-wrap` is only for real endings (`--end` delegates to it).
-- `context-slim` is periodic maintenance — monthly, or after a big phase ships.
+- `user-draft` is the authoring helper — it turns rough thoughts into a clean prompt or a
+  checkable `/goal` string and checkpoints via `task-handoff --loop` so a window pivot loses nothing.
 
-### 9. Plan maintenance
+</details>
+
+<details>
+<summary><strong>9. Plan &amp; portfolio maintenance</strong></summary>
 
 ```
 /user-pm [--cut|--goal|--overnight|...]   # read-only PM snapshot: shipped / outstanding / next / cuttable
 /plan-trim                                # the write path: propose 3-8 cuts, execute on confirm
 /plan-merge <plan-1> <plan-2>             # reconcile overlapping plans into one spine
+/research-prospect                        # survey all active projects → menu of /deep-research topics to farm out
 ```
 
 - `user-pm` prescribes, never executes — its Build/Overnight moves print the ready
   `/plan-*` or `/build-phase` command with prerequisites. `plan-trim` is its writing companion.
+- `research-prospect` is the cross-project sibling of `user-pm`: read-only, it surveys every active
+  project and emits a prioritized menu of research topics to farm out to other windows.
 - After a merge, re-run `/plan-review` + `/plan-wrap` on the merged plan and `/repo-sync` to
   re-cut issues. Originals are archived, never deleted.
 
-### 10. The skill self-improvement loop
+</details>
 
-The meta layer: skills that measure and improve the other skills.
+<details>
+<summary><strong>10. Improving the skills (and the workspace's memory)</strong></summary>
+
+Two independent tracks operate on the skills themselves and on the workspace's feedback memory.
 
 ```mermaid
 flowchart TD
-    subgraph SETUP["SET UP"]
+    subgraph IMPROVE["IMPROVE A SKILL"]
         direction LR
-        S["skill-eval-setup<br>(bootstrap evals)"]
+        A["user-brainstorm<br>(candidate strategies)"] --> B["skill-eval-setup<br>(bootstrap evals)"] --> C["skill-evolve<br>(parallel A/B variants)"] --> D["skill-iterate<br>(serial hill-climb)"]
     end
-    subgraph IMPROVE["IMPROVE"]
+    subgraph CODIFY["CODIFY A LESSON"]
         direction LR
-        I["skill-iterate<br>(overnight hill-climb)"] -- "delta < 1% = plateau" --> E["skill-evolve<br>(parallel A/B variants)"]
+        E["lesson-harvest<br>(draft PR)"] --> F["memory-distill<br>(human gate)"]
     end
-    subgraph CODIFY["CODIFY"]
-        direction LR
-        L["lesson-harvest<br>(draft PR)"] --> M["review-memories<br>(human gate)"]
-    end
-    SETUP --> IMPROVE --> CODIFY
+    IMPROVE ~~~ CODIFY
 ```
 
 ```
-/skill-eval-setup <skill>                 # prerequisite: evals.json + scenarios + golden corpus
-/skill-iterate                            # overnight: drains every evals-bearing skill, 1h or 12 iters each
-/skill-evolve --skill <name> --variants <file>   # plateau-breaker; pushes winner branch, prints gh pr create
-/lesson-harvest --dry-run                 # scan git history + run logs for un-codified regressions
-/review-memories                          # the only skill allowed to write memory changes
-/test-prune                               # audit a project's suite for redundant / mock-theater tests
+# improve a skill
+/user-brainstorm <skill or problem>              # candidate strategies / framings to try
+/skill-eval-setup <skill>                        # bootstrap evals.json + scenarios + golden corpus
+/skill-evolve --skill <name> --variants <file>   # A/B N variants in parallel; pushes winner, prints gh pr create
+/skill-iterate                                   # overnight serial hill-climb (1h or 12 iters per skill)
+
+# codify a lesson
+/lesson-harvest --dry-run                        # scan git history + run logs for un-codified regressions → draft PR
+/memory-distill                                  # human gate: distill drafts into durable principles (the only memory writer)
 ```
 
-- Iterate is serial *exploitation*, evolve is parallel *exploration*; both refuse to run without
-  the evals folder `skill-eval-setup` creates.
-- Nothing in this loop self-approves: evolve prints the PR command instead of opening it,
-  harvest only drafts, and review-memories keeps a human at the write gate.
+- The improve track is explore-then-exploit: brainstorm framings, A/B them with `skill-evolve`, then
+  hill-climb the winner with `skill-iterate`. (In steady state the two loop — `skill-iterate` runs
+  nightly and hands plateaued skills back to `skill-evolve`; see each `SKILL.md`.)
+- `skill-evolve` and `skill-iterate` both require the evals folder `skill-eval-setup` creates.
+- Nothing self-approves: `skill-evolve` prints the PR command instead of opening it, `lesson-harvest`
+  only drafts, and `memory-distill` keeps a human at the write gate.
 
-### 11. Ideation, learning, research
+</details>
+
+<details>
+<summary><strong>11. Ideation &amp; learning</strong></summary>
 
 ```
 /user-brainstorm <topic>            # 10 seed topics + gap-fill rounds → tiered doc set under docs/investigations/
 /user-learn <topic>                 # hands-on learning ramp: runnable notebooks, exercises, tracker
-/user-draft <rough thoughts>        # polish into a reusable prompt or a copy-pasteable /goal condition
-/research-prospect                  # per-project menu of /deep-research topics to farm out to other windows
 ```
 
 These are deliberately conversational — they keep you in the loop instead of running the pipeline.
+
+</details>
 
 ---
 
@@ -301,6 +351,9 @@ they become issues, every build step is gated by independent reviewers, acceptan
 and even the skills that improve the skills keep a human at the merge gate.*
 
 ## Install
+
+<details>
+<summary><strong>How to point Claude Code at these skills</strong></summary>
 
 Each top-level folder is one skill. Point Claude Code at them by copying the folders into your skills
 directory, or by linking this repo in:
@@ -320,6 +373,8 @@ mklink /J "%USERPROFILE%\.claude\skills-shared" "%CD%"
 ```
 
 Then invoke a skill in Claude Code, e.g. `/plan-review` or `/build-step`.
+
+</details>
 
 ## Adapt before use
 

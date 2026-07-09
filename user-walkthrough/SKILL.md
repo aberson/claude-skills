@@ -19,7 +19,7 @@ never redefines the row grammar, slug rule, or status vocabulary; it cites the e
 ## When to use / not
 
 - **Use:** a tool or feature was just built (post-`/build-phase`, post-`/build-step`, or a
-  fresh `/bug-fix`) and you want to poke it yourself — ask how it works, try things, surface
+  fresh `/user-fix`) and you want to poke it yourself — ask how it works, try things, surface
   issues — with the agent answering from source, fixing small breakage live, and tracking what
   got covered. You want to be in the driver's seat.
 - **Don't use** when you want the agent to close out UAT autonomously (that is

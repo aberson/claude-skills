@@ -1,18 +1,19 @@
 ---
-name: bug-fix
-description: Diagnose and fix a bug end-to-end with forced primary-source investigation before any code change. Independently reproduces the bug, designs a fix, delegates implementation to build-step, then verifies the original symptom is gone. Built to break the command-paste loop with the user. Invoke as "/bug-fix --symptom '...' [flags]".
+name: user-fix
+description: Diagnose and fix a bug end-to-end with forced primary-source investigation before any code change. Independently reproduces the bug, designs a fix, delegates implementation to build-step, then verifies the original symptom is gone. Built to break the command-paste loop with the user when a problem keeps circling between you and the agent. Invoke as "/user-fix --symptom '...' [flags]".
 user-invocable: true
 ---
 
-# Bug Fix
+# User Fix
 
 Run a bug report end-to-end: investigate, reproduce, design, fix, verify.
-Avoid the command-paste loop with the user.
+Reach for it when a problem keeps circling between you and the agent — it
+breaks the command-paste loop by having the agent do the triage itself.
 Run diagnostic commands yourself, read logs yourself, and verify CLI
 suggestions against argparse before invoking them.
 ## When to use
 
-Use `/bug-fix` when:
+Use `/user-fix` when:
 - Something is broken and you want a fix, not just a discussion.
 - You have a symptom (log line, error, screenshot) but not a confirmed root
   cause.
@@ -327,7 +328,7 @@ Bug investigation is the highest-risk scenario for context loss. Hypotheses form
 ruled out, repro conditions confirmed, root cause narrowed — all of this lives in context,
 none of it reaches disk until the fix ships (or at all if compaction fires mid-investigation).
 
-bug-fix MUST write to `current.md` at 6 trigger points during execution.
+user-fix MUST write to `current.md` at 6 trigger points during execution.
 Write at the moment of discovery — NOT at fix completion. The dead ends list IS the
 investigation state.
 
@@ -371,7 +372,7 @@ or
 
 **Completed** (trigger 6 — append):
 ```
-- [<sha>] bug-fix [bug description]: [root cause summary] — fixed
+- [<sha>] user-fix [bug description]: [root cause summary] — fixed
 ```
 
 **Critical Gotchas** (trigger 5 — append):
