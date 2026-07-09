@@ -26,6 +26,10 @@ The design idea across all of these: treat agent work as a **pipeline with quali
 build one step at a time, review with independent adversarial passes, and only then ship. Several
 skills use multi-agent fan-out (parallel reviewers, judge panels, generate-then-grade loops).
 
+**[WORKFLOWS.md](WORKFLOWS.md) maps how the skills chain together** — the core plan → build → ship
+pipeline plus the supporting loops (UAT, overnight runs, session management, skill self-improvement),
+each as a copy-pasteable command sequence.
+
 ## Install
 
 Each top-level folder is one skill. Point Claude Code at them by copying the folders into your skills
