@@ -87,26 +87,10 @@ The graphic shows where each rail *goes*; the table shows what a fragment *sound
 
 Plan → sync → build → ship. Everything else supports this spine.
 
-```mermaid
-flowchart TD
-    subgraph PLAN["PLAN"]
-        direction LR
-        A["plan-init (new)<br>plan-feature (existing)"] --> B["plan-review"] --> C["plan-wrap"]
-    end
-    subgraph SYNC["SYNC TO GITHUB"]
-        direction LR
-        D["repo-sync<br>(first time: repo-init)"]
-    end
-    subgraph BUILD["BUILD"]
-        direction LR
-        E["build-phase"] --> F["build-step &times; N"] --> G["review gates<br>(review-gauntlet / review-deep)"]
-    end
-    subgraph SHIP["SHIP"]
-        direction LR
-        H["acceptance UAT<br>(review-uat/user-uat,<br>walkthrough/shakedown)"] --> I["repo-update"]
-    end
-    PLAN --> SYNC --> BUILD --> SHIP
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="_shared/core-pipeline-dark.svg">
+  <img alt="The core pipeline: PLAN (plan-init or plan-feature → plan-review → plan-wrap), then SYNC to GitHub (repo-sync; first run repo-init), then BUILD (build-phase → build-step × N → review gates), then SHIP (acceptance UAT → repo-update)." src="_shared/core-pipeline-light.svg">
+</picture>
 
 `plan-expedite` collapses the middle — `plan-review → plan-wrap → repo-sync → handoff` — into one
 autonomous command, and ends by printing the exact `/goal` + `/build-phase` pair to paste next.
@@ -368,18 +352,10 @@ across all 8 rails.
 
 Two independent tracks operate on the skills themselves and on the workspace's feedback memory.
 
-```mermaid
-flowchart TD
-    subgraph IMPROVE["IMPROVE A SKILL"]
-        direction LR
-        A["user-brainstorm<br>(candidate strategies)"] --> B["skill-eval-setup<br>(bootstrap evals)"] --> C["skill-evolve<br>(parallel A/B variants)"] --> D["skill-iterate<br>(serial hill-climb)"]
-    end
-    subgraph CODIFY["CODIFY A LESSON"]
-        direction LR
-        E["lesson-harvest<br>(draft PR)"] --> F["memory-distill<br>(human gate)"]
-    end
-    IMPROVE ~~~ CODIFY
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="_shared/improve-skills-dark.svg">
+  <img alt="Two independent tracks. Improve a skill: user-brainstorm → skill-eval-setup → skill-evolve → skill-iterate. Codify a lesson: lesson-harvest → memory-distill." src="_shared/improve-skills-light.svg">
+</picture>
 
 ```
 # improve a skill

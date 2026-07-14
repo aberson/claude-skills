@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 214" font-family="ui-monospace,'Cascadia Code','SF Mono',Consolas,'Roboto Mono',monospace" role="img" aria-label="The core pipeline: plan, then sync to GitHub, then build, then ship">
+  <defs>
+    <marker id="ar-light" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#C0C9DA"/></marker>
+    <marker id="ar-s-light" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#3355E0"/></marker>
+    <filter id="sh-light" x="-20%" y="-45%" width="140%" height="190%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(20,26,40,.16)"/></filter>
+  </defs>
+  <style>
+    .bg{fill:#FFFFFF;stroke:#D4DBE8;stroke-width:1.5}
+    .lnk{fill:none;stroke:#C0C9DA;stroke-width:1.7}
+    .spine{fill:none;stroke:#3355E0;stroke-width:2.4}
+    .node rect{fill:#FFFFFF;stroke:#C0C9DA;stroke-width:1.4;filter:url(#sh-light)}
+    .pn{fill:#3355E0;font-size:13px;font-weight:600}
+    .ps{fill:#6E778C;font-size:10.5px}
+    .lbl{fill:#6E778C;font-size:11px;letter-spacing:.12em;font-weight:600}
+    .cap{fill:#6E778C;font-size:10.5px}
+  </style>
+  <rect class="bg" x="6" y="6" width="988" height="202" rx="16"/>
+  <text class="lbl" x="24" y="32">PLAN</text>
+  <text class="lbl" x="280" y="32">SYNC → GITHUB</text>
+  <text class="lbl" x="536" y="32">BUILD</text>
+  <text class="lbl" x="792" y="32">SHIP</text>
+  <path class="spine" marker-end="url(#ar-s-light)" d="M224,112 L280,112"/>
+  <path class="spine" marker-end="url(#ar-s-light)" d="M480,112 L536,112"/>
+  <path class="spine" marker-end="url(#ar-s-light)" d="M736,112 L792,112"/>
+  <g class="node"><rect x="24" y="46" width="200" height="46" rx="10"/><text class="pn" x="38" y="67">plan-init · plan-feature</text><text class="ps" x="38" y="84">new · existing</text></g>
+  <path class="lnk" marker-end="url(#ar-light)" d="M124,92 L124,106"/>
+  <g class="node"><rect x="24" y="106" width="200" height="34" rx="10"/><text class="pn" x="38" y="127">plan-review</text></g>
+  <path class="lnk" marker-end="url(#ar-light)" d="M124,140 L124,154"/>
+  <g class="node"><rect x="24" y="154" width="200" height="34" rx="10"/><text class="pn" x="38" y="175">plan-wrap</text></g>
+  <g class="node"><rect x="280" y="90" width="200" height="46" rx="10"/><text class="pn" x="294" y="111">repo-sync</text><text class="ps" x="294" y="128">first run: repo-init</text></g>
+  <g class="node"><rect x="536" y="46" width="200" height="34" rx="10"/><text class="pn" x="550" y="67">build-phase</text></g>
+  <path class="lnk" marker-end="url(#ar-light)" d="M636,80 L636,94"/>
+  <g class="node"><rect x="536" y="94" width="200" height="34" rx="10"/><text class="pn" x="550" y="115">build-step  × N</text></g>
+  <path class="lnk" marker-end="url(#ar-light)" d="M636,128 L636,142"/>
+  <g class="node"><rect x="536" y="142" width="200" height="46" rx="10"/><text class="pn" x="550" y="163">review gates</text><text class="ps" x="550" y="180">gauntlet / deep</text></g>
+  <g class="node"><rect x="792" y="62" width="200" height="48" rx="10"/><text class="pn" x="806" y="83">acceptance UAT</text><text class="ps" x="806" y="100">uat · walkthrough · shakedown</text></g>
+  <path class="lnk" marker-end="url(#ar-light)" d="M892,110 L892,124"/>
+  <g class="node"><rect x="792" y="124" width="200" height="34" rx="10"/><text class="pn" x="806" y="145">repo-update</text></g>
+  </svg>

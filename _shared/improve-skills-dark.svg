@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 228" font-family="ui-monospace,'Cascadia Code','SF Mono',Consolas,'Roboto Mono',monospace" role="img" aria-label="Improving the skills: an explore-then-exploit track and a codify-a-lesson track, independent">
+  <defs>
+    <marker id="ar-dark" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#384153"/></marker>
+    <marker id="ar-s-dark" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6E9BFF"/></marker>
+    <filter id="sh-dark" x="-20%" y="-45%" width="140%" height="190%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,.5)"/></filter>
+  </defs>
+  <style>
+    .bg{fill:#161C26;stroke:#29313F;stroke-width:1.5}
+    .lnk{fill:none;stroke:#384153;stroke-width:1.7}
+    .spine{fill:none;stroke:#6E9BFF;stroke-width:2.4}
+    .node rect{fill:#161C26;stroke:#384153;stroke-width:1.4;filter:url(#sh-dark)}
+    .pn{fill:#6E9BFF;font-size:13px;font-weight:600}
+    .ps{fill:#7C8598;font-size:10.5px}
+    .lbl{fill:#7C8598;font-size:11px;letter-spacing:.12em;font-weight:600}
+    .cap{fill:#7C8598;font-size:10.5px}
+  </style>
+  <rect class="bg" x="6" y="6" width="988" height="216" rx="16"/>
+  <text class="lbl" x="24" y="32">IMPROVE A SKILL</text>
+  <g class="node"><rect x="24" y="46" width="200" height="48" rx="10"/><text class="pn" x="38" y="67">user-brainstorm</text><text class="ps" x="38" y="84">candidate strategies</text></g>
+  <path class="lnk" marker-end="url(#ar-dark)" d="M224,70 L262,70"/>
+  <g class="node"><rect x="262" y="46" width="200" height="48" rx="10"/><text class="pn" x="276" y="67">skill-eval-setup</text><text class="ps" x="276" y="84">bootstrap evals</text></g>
+  <path class="lnk" marker-end="url(#ar-dark)" d="M462,70 L500,70"/>
+  <g class="node"><rect x="500" y="46" width="200" height="48" rx="10"/><text class="pn" x="514" y="67">skill-evolve</text><text class="ps" x="514" y="84">parallel A/B</text></g>
+  <path class="lnk" marker-end="url(#ar-dark)" d="M700,70 L738,70"/>
+  <g class="node"><rect x="738" y="46" width="200" height="48" rx="10"/><text class="pn" x="752" y="67">skill-iterate</text><text class="ps" x="752" y="84">serial hill-climb</text></g>
+  <line x1="24" y1="120" x2="976" y2="120" stroke="#29313F" stroke-width="1" stroke-dasharray="3 5"/>
+  <text class="cap" x="880" y="116" text-anchor="end">independent tracks</text>
+  <text class="lbl" x="24" y="150">CODIFY A LESSON</text>
+  <g class="node"><rect x="24" y="164" width="200" height="48" rx="10"/><text class="pn" x="38" y="185">lesson-harvest</text><text class="ps" x="38" y="202">draft PR</text></g>
+  <path class="lnk" marker-end="url(#ar-dark)" d="M224,188 L262,188"/>
+  <g class="node"><rect x="262" y="164" width="200" height="48" rx="10"/><text class="pn" x="276" y="185">memory-distill</text><text class="ps" x="276" y="202">human gate</text></g>
+  </svg>
