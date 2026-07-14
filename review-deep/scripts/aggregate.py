@@ -120,11 +120,11 @@ class Finding:
 class LensVerdict:
     """One lens's verdict block.
 
-    Five standing code lenses (correctness, bugs, test-quality, style,
+    Six standing code lenses (correctness, bugs, security, test-quality, style,
     plan-conformance) plus optional runtime lenses (ui, backend, frontend).
 
     Fields:
-        lens_id: Lens identifier; one of 'correctness' | 'bugs' |
+        lens_id: Lens identifier; one of 'correctness' | 'bugs' | 'security' |
             'test-quality' | 'style' | 'plan-conformance' (code lenses) or
             a runtime lens id ('ui' | 'backend' | 'frontend').
         model_tier: Tier the lens actually ran on after --model-override
@@ -156,10 +156,16 @@ class LensVerdict:
 
 
 # Fixed code-lens spawn order, used by aggregator rule 7 primary-lens selection
-# and by the markdown summary's lens-verdicts subsection.
+# and by the markdown summary's lens-verdicts subsection. The 'security' lens is
+# promoted out of 'bugs' (SKILL.md Security lens) and slots after it so a
+# security-class defect both Bugs and Security flag routes to Security as primary
+# (via ANTI_PATTERN_PRIMARY below, not spawn order, but the position keeps the
+# documented order coherent). Cross-step contract with SKILL.md "Standing lens
+# list" + Aggregation section -- a rename or reorder MUST touch both sites.
 CODE_LENS_ORDER = [
     "correctness",
     "bugs",
+    "security",
     "test-quality",
     "style",
     "plan-conformance",
@@ -167,7 +173,13 @@ CODE_LENS_ORDER = [
 
 # Anti-pattern catalog Lens-routing table -- the (primary, secondary) pair per
 # catalog entry as documented in SKILL.md Anti-pattern catalog section. Used by
-# aggregator rules 2 and 7 to resolve cross-lens primaries.
+# aggregator rules 2 and 7 to resolve cross-lens primaries. The three
+# security-class defect classes (injection-as-data, secret-dump,
+# unsafe-config-without-startup-guard, per .claude/rules/security.md) route to
+# the Security lens as PRIMARY OWNER -- a finding both Bugs and Security flag at
+# the same file_line is owned by Security and the Bugs copy demotes to FYI
+# (SKILL.md Aggregation § rule 2: "Security is the registered PRIMARY OWNER of
+# security findings").
 ANTI_PATTERN_PRIMARY = {
     "silent-wiring": "bugs",
     "producer-consumer-drift": "bugs",
@@ -176,6 +188,9 @@ ANTI_PATTERN_PRIMARY = {
     "silent-fallthrough-in-hot-path": "bugs",
     "duplicate-shape-constants": "bugs",
     "create-table-without-migration": "bugs",
+    "injection-as-data": "security",
+    "secret-dump": "security",
+    "unsafe-config-without-startup-guard": "security",
 }
 
 # Severity ordinals for monotonic comparison / demotion / escalation.
@@ -795,8 +810,8 @@ def assign_m_numbers(deferred_items: list[dict]) -> list[dict]:
     - Within a single review-deep invocation: items are numbered starting at
       M1 in the order the aggregator emits them. Emission order is
       (a) the order each lens reported them in its findings, then (b) the
-      lens-spawn order CODE_LENS_ORDER (correctness, bugs, test-quality,
-      style, plan-conformance) followed by any runtime lenses.
+      lens-spawn order CODE_LENS_ORDER (correctness, bugs, security,
+      test-quality, style, plan-conformance) followed by any runtime lenses.
     - Across invocations: review-deep does NOT track prior invocations'
       M-numbers. Each invocation restarts at M1. Persistence is the plan.md's
       job per /build-phase's "Deferred-UAT bundling" rules; operators who
@@ -1241,8 +1256,10 @@ def run_unit_tests() -> int:
     in absence path (Test 3), empty lens dir -> NEEDS-WORK (Test 4),
     render_markdown Unicode smoke (Test 5), rule 7 lint-finding dedup
     (Test 6) with normalization + range sub-case (Test 6b),
-    load_lint_findings I/O round-trip (Test 7), and rule 7
-    scope-boundary-deferral exclusion in the lint path (Test 8). Prints
+    load_lint_findings I/O round-trip (Test 7), rule 7
+    scope-boundary-deferral exclusion in the lint path (Test 8), and rule 2
+    Security-as-primary-owner for a Bugs+Security secret-dump co-flag (Test 9).
+    Prints
     UNIT TESTS PASSED + returns 0 on success; prints UNIT TEST FAILED:
     <reason> + returns 1 on first failure.
     """
@@ -1745,6 +1762,89 @@ def run_unit_tests() -> int:
                 f"rule 7 lint path: deferred item wrongly annotated, "
                 f"got {item.get('also_flagged_by_linter')!r}"
             )
+
+        # Test 9: Security is the PRIMARY OWNER of security findings (rule 2).
+        # A Security lens and a Bugs lens both flag the same security-class
+        # defect (anti_pattern 'secret-dump') at the SAME file_line. Per
+        # ANTI_PATTERN_PRIMARY['secret-dump'] == 'security', Security keeps its
+        # Block and the Bugs copy demotes to FYI with the rule-2 prefix. Also
+        # asserts 'security' sits AFTER 'bugs' in CODE_LENS_ORDER so the
+        # documented spawn order stays coherent (SKILL.md Standing lens list).
+        assert "security" in CODE_LENS_ORDER, "security must be a code lens"
+        assert CODE_LENS_ORDER.index("security") == CODE_LENS_ORDER.index("bugs") + 1, (
+            "CODE_LENS_ORDER: 'security' must immediately follow 'bugs', got "
+            f"{CODE_LENS_ORDER!r}"
+        )
+        assert ANTI_PATTERN_PRIMARY.get("secret-dump") == "security", (
+            "ANTI_PATTERN_PRIMARY['secret-dump'] must route to 'security', got "
+            f"{ANTI_PATTERN_PRIMARY.get('secret-dump')!r}"
+        )
+
+        def _sec_coflag_lv(lens_id: str, rationale: str) -> dict:
+            return {
+                "lens_id": lens_id,
+                "model_tier": "sonnet",
+                "authority": "a",
+                "coverage_claim": "c",
+                "findings": [
+                    {
+                        "severity": "Block",
+                        "file_line": "scripts/debug_env.sh:3",
+                        "excerpt": "cat /etc/void_furnace/secrets.env",
+                        "rationale": rationale,
+                        "anti_pattern": "secret-dump",
+                    }
+                ],
+                "overall_verdict": "NEEDS-WORK",
+            }
+
+        sec_coflag = [
+            _sec_coflag_lv(
+                "bugs",
+                "stdout round-trip of a secrets-bearing file leaks secrets",
+            ),
+            _sec_coflag_lv(
+                "security",
+                "secret-dump per security.md; use stat/wc/file metadata check",
+            ),
+        ]
+        out6 = aggregate(
+            sec_coflag,
+            prior_sidecar=None,
+            timestamp="2026-01-01T00-00-00",
+            skill_version="v3",
+        )
+        sec_lv6 = next(
+            lv for lv in out6["lens_verdicts"] if lv["lens_id"] == "security"
+        )
+        bugs_lv6 = next(
+            lv for lv in out6["lens_verdicts"] if lv["lens_id"] == "bugs"
+        )
+        sec_f6 = sec_lv6["findings"][0]
+        bugs_f6 = bugs_lv6["findings"][0]
+        # (a) Security is the primary owner -> keeps its Block.
+        assert sec_f6["severity"] == "Block", (
+            f"rule 2 security-primary: Security must keep Block, got "
+            f"{sec_f6['severity']!r}"
+        )
+        assert not sec_f6["rationale"].startswith("Demoted per rule 2:"), (
+            f"rule 2 security-primary: Security must NOT be demoted, got "
+            f"{sec_f6['rationale'][:40]!r}"
+        )
+        # (b) The Bugs copy demotes to FYI per rule 2.
+        assert bugs_f6["severity"] == "FYI", (
+            f"rule 2 security-primary: Bugs co-flag must demote to FYI, got "
+            f"{bugs_f6['severity']!r}"
+        )
+        assert bugs_f6["rationale"].startswith("Demoted per rule 2:"), (
+            f"rule 2 security-primary: Bugs copy must carry rule-2 prefix, got "
+            f"{bugs_f6['rationale'][:40]!r}"
+        )
+        # The aggregated verdict stays NEEDS-WORK (the surviving Block).
+        assert out6["aggregated_verdict"]["result"] == "NEEDS-WORK", (
+            f"rule 2 security-primary: expected NEEDS-WORK (1 surviving Block), "
+            f"got {out6['aggregated_verdict']['result']!r}"
+        )
 
     except AssertionError as e:
         sys.stdout.write(f"UNIT TEST FAILED: {e}\n")

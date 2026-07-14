@@ -1,21 +1,23 @@
 ---
 name: review-deep
-description: Five-lens code review (correctness, bugs, tests, style, plan-conformance) with anti-pattern catalog, severity+evidence, JSON audit trail. Use for high-stakes diffs alongside review-gauntlet.
+description: Six-lens code review (correctness, bugs, security, tests, style, plan-conformance) with anti-pattern catalog, severity+evidence, JSON audit trail. Use for high-stakes diffs; use the leaner review-gauntlet profile for routine diffs.
 user-invocable: true
 ---
 
 # Review Deep
 
-A deeper-pass sibling to `review-gauntlet`. Runs five standing review lenses
-(correctness, bugs, test quality, style, **plan-conformance**) instead of four,
-with explicit Tier-1 anti-pattern detection, per-lens model-tier selection,
+> **Judging doctrine:** the producer-grader split, evidence-on-every-verdict, deterministic-aggregation, and primary-owner dedup rules this skill runs on live in [`_shared/judge-core.md`](../_shared/judge-core.md) — this skill is one of its reference implementations (§10). It instantiates the doctrine for the code-review domain.
+
+The full-depth engine behind `review-gauntlet`'s lean profile. Runs six standing
+review lenses (correctness, bugs, **security**, test quality, style,
+plan-conformance), with explicit Tier-1 anti-pattern detection, per-lens model-tier selection,
 severity tiers + cited evidence on every finding, an auth-gated runtime
 downgrade, a scope-boundary `DEFERRED-TO-UAT` verdict for things only an
 operator can confirm, and a JSON sidecar that captures the full audit trail.
-Ships in v1 alongside `review-gauntlet`, not as a replacement — use this
+`review-gauntlet` is a lean profile over this engine — use this
 skill when the diff is high-stakes (substrate changes, schema/key-shape
 changes, producer-consumer chains, anything where a silent miss is expensive)
-and the cheaper four-pass gauntlet when the diff is routine.
+and the leaner gauntlet profile when the diff is routine.
 
 ---
 
@@ -85,7 +87,7 @@ plan-conformance lens.
 
 ## Reviewer lenses
 
-The skill spawns five fresh-context sub-agents, one per lens. Each lens is a
+The skill spawns six fresh-context sub-agents, one per lens, **all in ONE tool message** (a single assistant turn carrying the lens calls in parallel — serial spawning only adds wall-clock for zero independence gain; independence comes from the context isolation below, not serial order; see `dev/.claude/rules/subagent-economy.md`). Dispatch each lens with its table-assigned tier (§ Model-tier selection) — arms never inherit an escalated session (tier policy, CLAUDE.md model paragraph). Each lens is a
 single-shot pass; iteration is the orchestrator's job (`/build-step --max-iter`).
 Each lens runs in isolation (no cross-lens chatter) so verdicts aren't biased
 by sibling findings (see `docs/investigations/review-agents/02-reviewer-dimensions.md`
@@ -95,11 +97,12 @@ and `docs/investigations/review-agents/32-prompt-scoping.md`).
 
 1. [Correctness](#correctness-lens) — diff vs stated intent
 2. [Bugs](#bugs-lens) — defects in the diff itself
-3. [Test quality](#test-quality-lens) — focus, trim, missing critical coverage
-4. [Style and conventions](#style-and-conventions-lens) — surrounding-code conformance
-5. [Plan-conformance](#plan-conformance-lens) — diff vs the named plan step (skipped if `--plan-step` absent)
+3. [Security](#security-lens) — adversarial-input / secrets / unsafe-config defects per `.claude/rules/security.md`
+4. [Test quality](#test-quality-lens) — focus, trim, missing critical coverage
+5. [Style and conventions](#style-and-conventions-lens) — surrounding-code conformance
+6. [Plan-conformance](#plan-conformance-lens) — diff vs the named plan step (skipped if `--plan-step` absent)
 
-**Universal evidence discipline (applies to all five lenses):** every finding
+**Universal evidence discipline (applies to all six lenses):** every finding
 cites `file:line` + excerpt + reasoning. Findings without citations are dropped
 during aggregation. See `docs/investigations/review-agents/13-evidence-requirements.md`
 for the full discipline (the reviewer-side counterpart to `/review-proof`).
@@ -108,13 +111,13 @@ for the full discipline (the reviewer-side counterpart to `/review-proof`).
 
 | Severity | Meaning | Triggers |
 |---|---|---|
-| `Block` | Must fix before merge | Bug with high severity; correctness gap; plan Done-when not satisfied; producer-consumer drift; codifying-test-diff; silent-wiring; security finding; CREATE TABLE w/o migration |
+| `Block` | Must fix before merge | Bug with high severity; correctness gap; plan Done-when not satisfied; producer-consumer drift; codifying-test-diff; silent-wiring; security finding (owned by the Security lens — injection-as-data, secret-dump, unsafe-config-without-startup-guard per `.claude/rules/security.md`); CREATE TABLE w/o migration |
 | `Nit` | Should consider | Convention deviation; medium-severity bug; test redundancy; suboptimal but functional code |
 | `FYI` | Observation, not action | Style preference; minor naming; observation outside lens scope; surfacing for operator awareness |
 
 Findings demoted one severity tier when evidence is weak (Block→Nit, Nit→FYI, FYI→dropped). Evidence is considered weak when `file_line` is absent OR `excerpt` is empty. See § Aggregation > Per-finding shape for the canonical rule.
 
-**`FYI` findings DO NOT trigger NEEDS-WORK.** A lens whose `findings` array contains only `FYI` entries (zero `Block`, zero `Nit`) still emits `Correctness verdict: PASS` (or the corresponding `<Lens> verdict: PASS`). `FYI` surfaces in the output for operator awareness; it is observation, not action. Only `Block` and `Nit` findings move a lens out of `PASS`. See the per-lens Output format sub-sections below for the explicit threshold rule applied uniformly across all five lenses.
+**`FYI` findings DO NOT trigger NEEDS-WORK.** A lens whose `findings` array contains only `FYI` entries (zero `Block`, zero `Nit`) still emits `Correctness verdict: PASS` (or the corresponding `<Lens> verdict: PASS`). `FYI` surfaces in the output for operator awareness; it is observation, not action. Only `Block` and `Nit` findings move a lens out of `PASS`. See the per-lens Output format sub-sections below for the explicit threshold rule applied uniformly across all six lenses.
 
 Approval semantics — what each verdict obligates the orchestrator to do — live
 in `docs/investigations/review-agents/18-approval-semantics.md`.
@@ -155,7 +158,7 @@ one of:
 - `Correctness verdict: NEEDS-WORK (N findings)`
 - `Correctness verdict: NO-EVIDENCE` (no diff content was visible to this lens — usually an inputs-gathering bug)
 
-**Verdict threshold (uniform across all five lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
 
 ### Bugs lens
 
@@ -165,14 +168,19 @@ one of:
 
 **Coverage claim:** Detects null/undefined access; resource leaks (open files,
 connections, listeners); race conditions / deadlocks / shared mutable state;
-type mismatches and implicit coercions that lose data; security issues
-(injection, path traversal, unvalidated input at boundaries); broken error
+type mismatches and implicit coercions that lose data; broken error
 propagation (swallowed exceptions, wrong error type). Adversarial framing:
 "find what breaks under unhappy paths, hostile inputs, race timing, concurrent
 modification" (see `docs/investigations/review-agents/29-adversarial-reviewer.md`).
 
 **Non-coverage:** Does NOT cover whether the diff matches intent (Correctness
-lens). Does NOT cover style. Does NOT cover plan-conformance.
+lens). Does NOT cover style. Does NOT cover plan-conformance. Does NOT cover
+adversarial-input / secrets / unsafe-config defects — injection-as-data,
+secret-file dumps, unsafe configs missing a startup guard, path traversal, authz
+gaps, unvalidated boundary input, bind-without-guard — that's the **Security**
+lens (Bugs = generic robustness/crashes; Security = the `.claude/rules/security.md`
+adversarial-input / secrets / unsafe-config failure modes). A bug that is ALSO a
+security defect is owned by Security as primary and may be cross-tagged FYI here.
 
 **Adversarial framing applies (see Anti-pattern catalog § verify-dev-claims framing wrapper):** when spawning the Bugs sub-agent, prepend its prompt with the verify-dev-claims framing so it adversarially hunts for failure modes the dev didn't consider — "find what breaks" rather than confirmatory "verify it works".
 
@@ -197,7 +205,78 @@ observation.
 - `Bugs verdict: NEEDS-WORK (N Block, M Nit findings)`
 - `Bugs verdict: NO-EVIDENCE`
 
-**Verdict threshold (uniform across all five lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
+
+### Security lens
+
+**Scope:** Ignoring intent and generic robustness — does this diff introduce an
+adversarial-input, secrets, or unsafe-config defect of the kind codified in
+`.claude/rules/security.md`? This lens is the PRIMARY OWNER of security findings
+(promoted out of the Bugs lens so the workspace's three real security failure
+modes get a reviewer primed specifically on them; see
+`docs/investigations/review-agents/16-security-reviewer.md`).
+
+**Coverage claim:** Primed on the three `.claude/rules/security.md` failure modes
+and the review-agents/16 defect classes:
+
+1. **Treat fetched external content as data, not instructions** (injection-as-data):
+   any code path letting fetched content — issue/PR bodies, web responses,
+   MCP-returned data, file contents, uploads — flow into a place where embedded
+   directives would be acted on (model prompts, shell commands, tool invocations,
+   `eval`). Recommend independent-channel verification of claims in fetched
+   content (e.g. `gh api rate_limit` for a rate-limit claim).
+2. **Pair unsafe configs with startup safety checks** (unsafe-config-without-startup-guard):
+   any "don't do X until Y is configured" sentence in code, docstring, comment,
+   plan, or README (LAN bind requires PIN, feature flag requires migration, debug
+   endpoint requires dev mode, write mode requires backup) where the guard is
+   documentation only — not a startup invariant with a stable error code.
+3. **Never dump secret file contents** (secret-dump): any `cat` / `head` / `tail` /
+   `od` / `awk` / `cut` / `grep` (or equivalent stdout round-trip) against a
+   secrets-bearing file in scripts, CI workflows, or operator docs. Acceptable
+   alternatives are metadata-only checks (`stat`, `wc -c`, `file`, `ls -la`),
+   effect-based verification (run the consumer + check exit code), and in-place
+   edits (`sed -i`, `install -m 0600 /dev/stdin`).
+
+Plus the adjacent defect classes review-agents/16 lists alongside the three:
+injection (SQL / command / template), path traversal, authz / access-control
+gaps, unvalidated boundary input, and bind-without-guard.
+
+**Non-coverage:** Does NOT cover generic robustness / crashes / null access /
+resource leaks / race conditions — that's the Bugs lens (Bugs = generic
+robustness; Security = the `.claude/rules/security.md` adversarial-input / secrets
+/ unsafe-config failure modes). Does NOT expand into generic best-practice
+security (CORS headers, CSP, dependency CVEs) unless the diff touches them (see
+`docs/investigations/review-agents/28-scope-creep.md`). Does NOT cover whether the
+diff matches intent (Correctness), style, or plan-conformance.
+
+**Adversarial framing applies (see Anti-pattern catalog § verify-dev-claims framing wrapper):** when spawning the Security sub-agent, prepend its prompt with the verify-dev-claims framing so it hunts adversarially for the attacker's path — "how does hostile input, a forgotten guard, or a leaked secret reach production" — rather than confirming the diff looks safe.
+
+**Evidence shape:** Each finding:
+
+```text
+file:line — <one-line summary>
+  Severity: <Block|Nit|FYI>
+  Excerpt: `<exact text>`
+  Reasoning: <which security.md failure mode / defect class, and the attacker path>
+  Defect class (optional): <injection-as-data | unsafe-config-without-startup-guard | secret-dump | injection | path-traversal | authz | unvalidated-input | bind-guard>
+```
+
+**Severity rubric:** `Block` for any of the three `security.md` failure modes
+(injection-as-data, unsafe-config-without-startup-guard, secret-dump) or an
+adjacent defect class reachable from production input — these are block-class,
+not nit-class (review-agents/16; security failures have an asymmetric cost
+profile). `Nit` for a security weakness not yet reachable from production input
+(a sink that exists but no untrusted source flows into it yet). `FYI` for a
+security observation outside this diff's scope worth operator awareness.
+
+**Output format:** A bulleted list of findings in evidence shape, ending with
+one of:
+
+- `Security verdict: PASS`
+- `Security verdict: NEEDS-WORK (N Block, M Nit findings)`
+- `Security verdict: NO-EVIDENCE` (no diff content was visible to this lens — usually an inputs-gathering bug)
+
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
 
 ### Test quality lens
 
@@ -241,7 +320,7 @@ reason), ending with one of:
 - `Test quality verdict: NEEDS-WORK (N delete, M rewrite, K Block)`
 - `Test quality verdict: NO-EVIDENCE`
 
-**Verdict threshold (uniform across all five lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
 
 ### Style and conventions lens
 
@@ -249,7 +328,7 @@ reason), ending with one of:
 surrounding code?
 
 **Optional local-judge offload (switchboard, INERT BY DEFAULT).** The Style lens is the
-ONLY review-deep lens cheap enough to route to a local model (offload-scan task_class
+ONLY review-deep lens cheap enough to route to a local model (tier-offload task_class
 `review-deep-style`; Switchboard Decision 9). Correctness, Bugs, Test-quality, and
 Plan-conformance are deep-reasoning drift-catchers (`code-quality.md`) and ALWAYS stay on
 Claude — never route them local. The Style offload is **off unless switchboard offload is
@@ -296,7 +375,7 @@ for hand-readable convention deviations. `FYI` for minor observations.
 - `Style verdict: NEEDS-WORK (N findings)`
 - `Style verdict: NO-EVIDENCE` (no diff content was visible to this lens — usually an inputs-gathering bug)
 
-**Verdict threshold (uniform across all five lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically.
 
 ### Plan-conformance lens
 
@@ -349,7 +428,7 @@ one of:
 - `Plan-conformance verdict: NEEDS-CLARIFICATION — could not locate step <step-id> in <plan-path> as either heading-format or table-format` (Block-severity inputs-gathering finding — distinct from SKIPPED; operator must fix the `--plan-step` argument or the plan file)
 - `Plan-conformance verdict: SKIPPED — no --plan-step provided`
 
-**Verdict threshold (uniform across all five lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically. Plan-conformance additionally emits `SKIPPED` when `--plan-step` is not provided at invocation (expected configuration, not a finding).
+**Verdict threshold (uniform across all six lenses).** Emit `PASS` if and only if `findings` contains zero `Block` AND zero `Nit` entries (`FYI`-only is `PASS`). Emit `NEEDS-WORK` if findings contains any `Block` or any `Nit`. Emit `NO-EVIDENCE` when the lens could not see diff content (inputs-gathering bug). No hedging in the verdict line — count `Block` + `Nit` entries and emit deterministically. Plan-conformance additionally emits `SKIPPED` when `--plan-step` is not provided at invocation (expected configuration, not a finding).
 
 **Critical: graceful skip behavior.** If `--plan-step` is not provided at
 invocation, this lens is NOT spawned, NOT marked failed, and NOT treated as
@@ -483,6 +562,7 @@ rationale.
 | Test quality | Sonnet 4.6 | Mid-stakes judgment |
 | Plan-conformance | Sonnet 4.6 | Mid-stakes; reads plan + diff |
 | Bugs | Sonnet 4.6 | Anti-pattern catalog covers most ground |
+| Security | Sonnet 4.6 | Deep-reasoning drift-catcher; asymmetric-cost defects — never Haiku |
 | Correctness | Sonnet 4.6 | Diff-vs-intent comparison |
 
 Concrete model IDs: `claude-haiku-4-5-20251001` (Haiku 4.5), `claude-sonnet-4-6`
@@ -494,7 +574,7 @@ The `Style` row corresponds to the `### Style and conventions lens` H3; for
 `--model-override` the flag name is `style` (the shorter form documented in the
 syntax below). All other lens names map kebab-case identically: `Test quality`
 → `test-quality`, `Plan-conformance` → `plan-conformance`, `Bugs` → `bugs`,
-`Correctness` → `correctness`.
+`Security` → `security`, `Correctness` → `correctness`.
 
 ### `--model-override` flag semantics
 
@@ -503,7 +583,7 @@ file) lets the operator swap the default tier for any single lens on a
 per-invocation basis.
 
 - **Syntax:** `--model-override <lens>=<tier>` where `<lens>` is one of
-  `style | test-quality | plan-conformance | bugs | correctness` and `<tier>`
+  `style | test-quality | plan-conformance | bugs | security | correctness` and `<tier>`
   is one of `haiku | sonnet | opus`. Tier names map to the latest model in each
   family: `haiku` → `claude-haiku-4-5-20251001`, `sonnet` → `claude-sonnet-4-6`,
   `opus` → `claude-opus-4-7`.
@@ -522,7 +602,7 @@ per-invocation basis.
     a known-trivial diff (rare; primarily for cost-tuning experiments).
 - **Invalid input:**
   - Unknown lens name → exit with an error message listing the valid lens
-    names (`style | test-quality | plan-conformance | bugs | correctness`).
+    names (`style | test-quality | plan-conformance | bugs | security | correctness`).
     Do NOT silently skip.
   - Unknown tier name → exit with an error message listing the valid tier
     names (`haiku | sonnet | opus`).
@@ -580,7 +660,7 @@ as its overall_verdict.
 
 Haiku 4.5 is roughly 5-10x cheaper and 2-3x faster per token than Sonnet 4.6 —
 that gap is why Style (mechanical convention-matching) defaults to Haiku
-while the four judgment-heavy lenses default to Sonnet. For large diffs,
+while the five judgment-heavy lenses default to Sonnet. For large diffs,
 context-window cost dominates tier choice; prefer shrinking the diff or
 narrowing `--reviewers` over escalating tiers. Cost-modeling detail in
 `docs/investigations/review-agents/23-context-window-cost.md` and
@@ -599,7 +679,7 @@ verdicts, two invocations produce byte-identical sidecars (modulo the
 
 ### Per-lens verdict shape
 
-Each lens sub-agent emits one `LensVerdict` object that the orchestrator collects into the JSON sidecar's `lens_verdicts[]` array. The canonical schema lives in `scripts/aggregate.py` (`LensVerdict` dataclass) with per-field docstrings; the required fields are `lens_id` (one of `correctness | bugs | test-quality | style | plan-conformance` for code lenses), `model_tier` (`haiku | sonnet | opus`, post-`--model-override` resolution; stable even when the lens SKIPs so tier-mix queries don't need to handle nulls), `authority` and `coverage_claim` (one-line strings from the lens's Scope / Coverage claim sub-sections), `findings` (empty list when no findings — never `null`/absent), and `overall_verdict` (one of `PASS | NEEDS-WORK | NO-EVIDENCE | FAILED | SKIPPED | NEEDS-CLARIFICATION` per Model strategy § per-lens overall_verdict enum). The `failure_reason` field is present ONLY when `overall_verdict == "FAILED"`; current allowed value is `"model_overloaded"` (cross-step contract with Model strategy § Overload-fallback). A rename or new value MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff — drift between the two sites is a `producer-consumer-drift` finding.
+Each lens sub-agent emits one `LensVerdict` object that the orchestrator collects into the JSON sidecar's `lens_verdicts[]` array. The canonical schema lives in `scripts/aggregate.py` (`LensVerdict` dataclass) with per-field docstrings; the required fields are `lens_id` (one of `correctness | bugs | security | test-quality | style | plan-conformance` for code lenses), `model_tier` (`haiku | sonnet | opus`, post-`--model-override` resolution; stable even when the lens SKIPs so tier-mix queries don't need to handle nulls), `authority` and `coverage_claim` (one-line strings from the lens's Scope / Coverage claim sub-sections), `findings` (empty list when no findings — never `null`/absent), and `overall_verdict` (one of `PASS | NEEDS-WORK | NO-EVIDENCE | FAILED | SKIPPED | NEEDS-CLARIFICATION` per Model strategy § per-lens overall_verdict enum). The `failure_reason` field is present ONLY when `overall_verdict == "FAILED"`; current allowed value is `"model_overloaded"` (cross-step contract with Model strategy § Overload-fallback). A rename or new value MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff — drift between the two sites is a `producer-consumer-drift` finding.
 
 ### Per-finding shape
 
@@ -607,7 +687,7 @@ Each entry in `lens_verdicts[].findings[]` is a `Finding` object whose canonical
 
 ### Aggregator rules
 
-`scripts/aggregate.py` implements seven deterministic rules whose full per-rule docstrings are the canonical authority on edge cases — read `aggregate.py` for the source of truth. Invocation: `python scripts/aggregate.py --lens-dir <dir> --output-dir <dir> [--skill-version v3] [--prior-sidecar <path>] [--lint-findings <path>]`. The rule names map to functions (`apply_rule_N_<desc>`) and the contract summary is: rule 1 severity-dominance (Block outweighs any number of Nits; aggregated verdict tracks max severity across lenses, not finding count; per `docs/investigations/review-agents/14-severity-tiers.md`); rule 2 lens-owns-dimension (when two lenses flag the same `file_line`, the lens whose Scope covers that dimension or the catalog anti-pattern's `Lens routing` primary wins, others demote to `FYI` with rationale prefixed `Demoted per rule 2:` so rule 6 can detect persistent disagreement on re-run; per `docs/investigations/review-agents/12-disagreement-resolution.md`); rule 3 SKIPPED-handling (plan-conformance SKIPPED when `--plan-step` absent; included in `lens_verdicts[]` for trace completeness, does NOT downgrade `aggregated_verdict.result`); rule 4 FAILED-handling (model-overloaded lens maps to `NEEDS-WORK` with `failure_reason` echoed in the aggregated rationale; no silent tier fallback; operator re-invokes with `--model-override <lens>=<other-tier>` to retry); rule 5 NO-EVIDENCE-handling (inputs-gathering bug; maps to `NEEDS-WORK` so the operator notices rather than accepting a vacuous PASS); rule 6 persistent-disagreement (when `--prior-sidecar <path>` supplied AND a current finding matches a prior demoted finding's identity — `file_line` + `anti_pattern` + `severity` — escalate severity by one tier and prefix rationale `Persistent disagreement:`; without `--prior-sidecar` the rule never fires); rule 7 absence-of-thing dedup AND lint-finding dedup (TWO independent dedup paths; both run inside `apply_rule_7_absence_dedup`). The absence path: when multiple lenses surface findings about the same absence — no concrete `path:line` anchor in the diff per `aggregate.py`'s `_is_absence_finding` heuristic — dedup by `(anti_pattern, summary fuzzy-match)` and demote duplicates to `FYI`; primary lens is the catalog `Lens routing` target or, absent an anti-pattern, the first lens to emit by `CODE_LENS_ORDER` correctness → bugs → test-quality → style → plan-conformance. The lint path: when a `lint-findings.json` is supplied (via `--lint-findings <path>` or auto-discovered at `<--output-dir>/lint-findings.json` / `.review-deep/lint-findings.json`), any lens finding sharing a concrete `file_line` with a lint finding demotes to `FYI` with the rationale prefixed `Cited-by-linter: <tool> <rule>` and an `also_flagged_by_linter: {tool, rule}` annotation for audit-trail completeness. The lint path is independent of the absence path; both run inside rule 7. Rule 7 fires BEFORE rule 6 in the pipeline so persistent-disagreement escalation applies only to the surviving primary; prevents cross-lens double-counting like the M1 smoke case where Bugs + Test quality both flagged "missing integration test" and inflated the Nit count to a noisy NEEDS-WORK.
+`scripts/aggregate.py` implements seven deterministic rules whose full per-rule docstrings are the canonical authority on edge cases — read `aggregate.py` for the source of truth. Invocation: `python scripts/aggregate.py --lens-dir <dir> --output-dir <dir> [--skill-version v3] [--prior-sidecar <path>] [--lint-findings <path>]`. The rule names map to functions (`apply_rule_N_<desc>`) and the contract summary is: rule 1 severity-dominance (Block outweighs any number of Nits; aggregated verdict tracks max severity across lenses, not finding count; per `docs/investigations/review-agents/14-severity-tiers.md`); rule 2 lens-owns-dimension (when two lenses flag the same `file_line`, the lens whose Scope covers that dimension or the catalog anti-pattern's `Lens routing` primary wins, others demote to `FYI` with rationale prefixed `Demoted per rule 2:` so rule 6 can detect persistent disagreement on re-run; per `docs/investigations/review-agents/12-disagreement-resolution.md`. **Security is the registered PRIMARY OWNER of security findings:** when both Bugs and Security flag the same security-class defect — `defect_class`/`anti_pattern` one of `injection-as-data`, `unsafe-config-without-startup-guard`, `secret-dump` (the three `.claude/rules/security.md` failure modes), mapped to `security` in `aggregate.py`'s `ANTI_PATTERN_PRIMARY` — Security wins as primary and the Bugs finding demotes to `FYI` cross-tag, so security findings are owned by Security, not Bugs); rule 3 SKIPPED-handling (plan-conformance SKIPPED when `--plan-step` absent; included in `lens_verdicts[]` for trace completeness, does NOT downgrade `aggregated_verdict.result`); rule 4 FAILED-handling (model-overloaded lens maps to `NEEDS-WORK` with `failure_reason` echoed in the aggregated rationale; no silent tier fallback; operator re-invokes with `--model-override <lens>=<other-tier>` to retry); rule 5 NO-EVIDENCE-handling (inputs-gathering bug; maps to `NEEDS-WORK` so the operator notices rather than accepting a vacuous PASS); rule 6 persistent-disagreement (when `--prior-sidecar <path>` supplied AND a current finding matches a prior demoted finding's identity — `file_line` + `anti_pattern` + `severity` — escalate severity by one tier and prefix rationale `Persistent disagreement:`; without `--prior-sidecar` the rule never fires); rule 7 absence-of-thing dedup AND lint-finding dedup (TWO independent dedup paths; both run inside `apply_rule_7_absence_dedup`). The absence path: when multiple lenses surface findings about the same absence — no concrete `path:line` anchor in the diff per `aggregate.py`'s `_is_absence_finding` heuristic — dedup by `(anti_pattern, summary fuzzy-match)` and demote duplicates to `FYI`; primary lens is the catalog `Lens routing` target or, absent an anti-pattern, the first lens to emit by `CODE_LENS_ORDER` correctness → bugs → security → test-quality → style → plan-conformance. The lint path: when a `lint-findings.json` is supplied (via `--lint-findings <path>` or auto-discovered at `<--output-dir>/lint-findings.json` / `.review-deep/lint-findings.json`), any lens finding sharing a concrete `file_line` with a lint finding demotes to `FYI` with the rationale prefixed `Cited-by-linter: <tool> <rule>` and an `also_flagged_by_linter: {tool, rule}` annotation for audit-trail completeness. The lint path is independent of the absence path; both run inside rule 7. Rule 7 fires BEFORE rule 6 in the pipeline so persistent-disagreement escalation applies only to the surviving primary; prevents cross-lens double-counting like the M1 smoke case where Bugs + Test quality both flagged "missing integration test" and inflated the Nit count to a noisy NEEDS-WORK.
 
 Renames or shape changes to any rule MUST touch both `scripts/aggregate.py` AND this section in the same diff (producer-consumer-drift prevention per `dev/.claude/rules/code-quality.md`).
 
@@ -640,11 +720,39 @@ run surface as deferrals.
 
 ### Audit-trail JSON sidecar schema
 
-After aggregation, the orchestrator writes one JSON file at `<--output-dir>/<timestamp>.json` (default `--output-dir` is `.review-deep/`). The canonical schema lives in `scripts/aggregate.py` (`write_sidecar` / `build_sidecar`); reading the script is the source of truth for field semantics. The top-level keys are, in this order: `timestamp` (filesystem-safe ISO 8601, `YYYY-MM-DDTHH-MM-SS`, MUST match the filename), `plan_step` (string `<path>:<step-id>` or `null`), `skill_version` (pinned string, `"v3"` for v3 sidecars; lets future schema migrations identify old sidecars), `invocation` (echoes the resolved argument values: `reviewers_flag`, `model_overrides`, `force_runtime`, `url`, `start_cmd`, `runtime_downgraded`, `runtime_downgrade_reason`), `lens_verdicts` (a 5-element stable prefix — one per code lens, including `SKIPPED` entries with `findings: []` — followed by 0..N runtime-lens entries at index 5+; SKIPPED lenses are present so the aggregator can rely on stable indexing), `aggregated_verdict` (`{result, rationale}`; result is one of `PASS | NEEDS-WORK | DEFERRED-TO-UAT` per the output-ladder rules below), `model_tiers_used` (a flat `lens_id → tier` map, separate from `lens_verdicts` to support quick queries without iterating findings), and `deferred_uat_items` (array of deferred-item dicts populated by the Scope-boundary deferral logic; empty array — not `null`, not absent — when no deferrals apply). The schema MUST be valid JSON (no comments). Any rename or new top-level key MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff.
+After aggregation, the orchestrator writes one JSON file at `<--output-dir>/<timestamp>.json` (default `--output-dir` is `.review-deep/`). The canonical schema lives in `scripts/aggregate.py` (`write_sidecar` / `build_sidecar`); reading the script is the source of truth for field semantics. The top-level keys are, in this order: `timestamp` (filesystem-safe ISO 8601, `YYYY-MM-DDTHH-MM-SS`, MUST match the filename), `plan_step` (string `<path>:<step-id>` or `null`), `skill_version` (pinned string, `"v3"` for v3 sidecars; lets future schema migrations identify old sidecars), `invocation` (echoes the resolved argument values: `reviewers_flag`, `model_overrides`, `force_runtime`, `url`, `start_cmd`, `runtime_downgraded`, `runtime_downgrade_reason`), `lens_verdicts` (a 6-element stable prefix — one per code lens, including `SKIPPED` entries with `findings: []` — followed by 0..N runtime-lens entries at index 6+; SKIPPED lenses are present so the aggregator can rely on stable indexing), `aggregated_verdict` (`{result, rationale}`; result is one of `PASS | NEEDS-WORK | DEFERRED-TO-UAT` per the output-ladder rules below), `model_tiers_used` (a flat `lens_id → tier` map, separate from `lens_verdicts` to support quick queries without iterating findings), and `deferred_uat_items` (array of deferred-item dicts populated by the Scope-boundary deferral logic; empty array — not `null`, not absent — when no deferrals apply). The schema MUST be valid JSON (no comments). Any rename or new top-level key MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff.
 
 ### Markdown output shape
 
-After writing the sidecar, the aggregator prints a human-readable markdown summary to stdout (suitable for paste into PR comments). The canonical renderer lives in `scripts/aggregate.py` (`render_markdown`). Structure: a header line (`# review-deep: PASS` / `NEEDS-WORK` / `DEFERRED-TO-UAT` / `NEEDS-WORK + DEFERRED-TO-UAT`), a `## Lens verdicts` subsection with one line per lens (`- <lens_id>: <overall_verdict> (<finding-count> findings, model: <model_tier>)`; SKIPPED lenses are shown explicitly so the operator always sees the full 5-lens trace; a runtime-downgrade line follows when the auth-gate probe fired), a `## Findings` subsection grouped by severity (`### Block`, `### Nit`, `### FYI`) where each finding renders as `- **<file_line>** (<lens_id>[, anti-pattern: <name>]): <rationale>` followed by the `excerpt` as a fenced sub-block (severity subsections with zero findings are omitted), an optional `## Deferred to operator UAT` subsection present only when `deferred_uat_items[]` is non-empty (rendering per the Scope-boundary deferral § Markdown rendering contract — H3 per item, covered-lenses bullet, needs-verification bullet, commands fenced powershell block), an explicit `Please run M<N> next.` cue line when deferrals exist (lowest M-number in the sidecar), and a final `Audit-trail JSON: .review-deep/<timestamp>.json` pointer. Markdown shape changes MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff.
+After writing the sidecar, the aggregator prints a human-readable markdown summary to stdout (suitable for paste into PR comments). The canonical renderer lives in `scripts/aggregate.py` (`render_markdown`). Structure: a header line (`# review-deep: PASS` / `NEEDS-WORK` / `DEFERRED-TO-UAT` / `NEEDS-WORK + DEFERRED-TO-UAT`), a `## Lens verdicts` subsection with one line per lens (`- <lens_id>: <overall_verdict> (<finding-count> findings, model: <model_tier>)`; SKIPPED lenses are shown explicitly so the operator always sees the full 6-lens trace; a runtime-downgrade line follows when the auth-gate probe fired), a `## Findings` subsection grouped by severity (`### Block`, `### Nit`, `### FYI`) where each finding renders as `- **<file_line>** (<lens_id>[, anti-pattern: <name>]): <rationale>` followed by the `excerpt` as a fenced sub-block (severity subsections with zero findings are omitted), an optional `## Deferred to operator UAT` subsection present only when `deferred_uat_items[]` is non-empty (rendering per the Scope-boundary deferral § Markdown rendering contract — H3 per item, covered-lenses bullet, needs-verification bullet, commands fenced powershell block), an explicit `Please run M<N> next.` cue line when deferrals exist (lowest M-number in the sidecar), and a final `Audit-trail JSON: .review-deep/<timestamp>.json` pointer. Markdown shape changes MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff.
+
+---
+
+## Calibration
+
+This skill is the FIRST judge wired to the deterministic per-commit calibration gate that operationalizes [`_shared/judge-core.md`](../_shared/judge-core.md) §7's Discrimination guard. Run it as:
+
+```bash
+python .claude/skills/_shared/calibrate_judge.py --skill review-deep --mode ci
+```
+
+It prints `PASS` and exits 0 when the recorded judge snapshot is fresh, discriminating, and in agreement with the gold labels; it prints `FAIL` and exits 1 (fail-closed) otherwise. No LLM is invoked — every check replays *recorded* artifacts.
+
+### The two gold artifacts
+
+Both live under `evals/golden/` and are the calibration contract (schema source-of-truth is `calibrate_judge.py`'s module docstring):
+
+- **`verdicts.jsonl`** — the hand-authored GOLD labels, one JSON object per fixture (`good.md` → `PASS`; each `bad_*.md` → `NEEDS-WORK` carrying its `defect_type` from `manifest.json` as `expected_block_anti_pattern` provenance). All 30 golden fixtures (1 good + 29 bads) appear here.
+- **`recorded_scores.json`** — the recorded judge snapshot: `generated_at` (freshness anchor), `scores` (numeric score per fixture → drives the **discrimination** check: `good.md` must strictly out-score every `bad_*.md`), and `recorded_verdicts` (the categorical verdict the judge produced when snapshotted → drives the **agreement** check against `verdicts.jsonl`). All 30 fixtures appear in both maps; a missing fixture fails the gate closed.
+
+### Operating rules
+
+- **Label-edit-separate-commit (code-review discipline, not gate-enforced).** Any change to `verdicts.jsonl` gold labels SHOULD land in its OWN commit — never bundled with a SKILL.md or judge-logic change — so a reviewer can scrutinize the relabeling in isolation and confirm it is not masking a judge degradation. This is enforced by review practice: `calibrate_judge.py` inspects artifact *content*, not git commit history, so it cannot catch a bundled relabel on its own.
+- **Freshness (timestamp age only).** The gate checks that `recorded_scores.json`'s `generated_at` is within `FRESHNESS_MAX_AGE_DAYS` (180 days) — a stale (or future-dated) timestamp fails. It checks the timestamp's AGE only; it cannot tell whether the snapshot was actually re-generated. When the seed ages out, honestly re-snapshot by re-running the judge — bumping `generated_at` without re-running is a code-review concern the gate cannot detect.
+
+### Honest scope (what this gate does NOT catch)
+
+The per-commit gate catches regressions in the **recorded snapshot and the fixture harness**: a fixture dropped from a map (fails closed), a non-discriminating recorded snapshot (`good.md` no longer out-scores the `bad_*.md` fixtures), or a mislabeled gold (recorded verdicts no longer match `verdicts.jsonl`). It does **NOT** exercise the live judge or the live aggregator (`aggregate.py`) — every check replays *recorded* numbers, so a bug introduced into the aggregator or judge logic AFTER the snapshot is invisible until `recorded_scores.json` is regenerated by re-running the judge. In particular it does **NOT** catch *judge-quality drift*: a judge that has silently gotten worse but whose old snapshot is still on disk will still pass. Detecting a degraded *live* judge needs the stochastic kappa-vs-gold sweep (re-running the judge over position-swapped pairs), which is **deferred to Phase 3** — a live LLM call cannot be made flake-free, so it must be a nightly-alerting signal, not a per-commit gate (`calibrate(mode="full")` is the Phase-3 stub for it and currently raises `NotImplementedError`).
 
 ---
 
@@ -656,11 +764,11 @@ The `--reviewers code|runtime|full` flag picks which review lane runs against th
 
 | Value | What runs | Required deps |
 |---|---|---|
-| `code` (default) | The 5 code lenses (correctness, bugs, test-quality, style, plan-conformance) | None — diff input is sufficient |
-| `runtime` | Runtime lenses (UI / Backend / Frontend per `review-gauntlet`'s runtime model) | `--start-cmd` and `--url` |
-| `full` | All 5 code lenses + the runtime lenses | `--start-cmd` and `--url` |
+| `code` (default) | The 6 code lenses (correctness, bugs, security, test-quality, style, plan-conformance) | None — diff input is sufficient |
+| `runtime` | Runtime lenses (UI / Backend / Frontend per `review-gauntlet`'s runtime model, dispatched `model: sonnet` per the arm pin) | `--start-cmd` and `--url` |
+| `full` | All 6 code lenses + the runtime lenses | `--start-cmd` and `--url` |
 
-When `--reviewers runtime` is specified, the 5 code lenses do NOT run; only the runtime lenses do. When `--reviewers full` is specified, both fire. Per the cross-step `lens_verdicts[]` contract (Aggregation § Audit-trail JSON sidecar schema), the 5 code-lens entries appear at indices 0–4 always — with `overall_verdict: "SKIPPED"` and empty `findings: []` arrays when only runtime mode runs — and runtime-lens entries (if any) appear at index 5 and onward. This keeps the stable 5-element prefix consumers can rely on regardless of which lane was selected.
+When `--reviewers runtime` is specified, the 6 code lenses do NOT run; only the runtime lenses do. When `--reviewers full` is specified, both fire. Per the cross-step `lens_verdicts[]` contract (Aggregation § Audit-trail JSON sidecar schema), the 6 code-lens entries appear at indices 0–5 always — with `overall_verdict: "SKIPPED"` and empty `findings: []` arrays when only runtime mode runs — and runtime-lens entries (if any) appear at index 6 and onward. This keeps the stable 6-element prefix consumers can rely on regardless of which lane was selected.
 
 Selection rule of thumb: default to `code`. Add `runtime` only when the step's `Done when:` includes a visual, screenshot, or HTTP-response assertion the diff alone cannot evaluate AND a fresh Playwright context can actually reach the verifiable state. Use `full` when the step spans backend logic and frontend behavior and both lenses pay off.
 
@@ -691,8 +799,8 @@ When `--reviewers runtime` or `--reviewers full` is specified, the skill probes 
 - Runtime lenses are NOT spawned.
 - The aggregated report's markdown summary includes a `Runtime downgrade: <reason-token> (<gloss>)` line in the `## Lens verdicts` subsection — where `<reason-token>` is the literal enum value from the JSON sidecar (`status_401` / `redirect_to_login:<url>` / `login_form_in_200_body` / `timeout`) and `<gloss>` is a human-readable expansion (e.g., `HTTP 401 Unauthorized`, `Redirected to /login`, `Login form detected in 200 body`, `Probe exceeded 10s timeout`). The enum token is the cross-step contract; the gloss is presentation.
 - The JSON sidecar's `invocation.reviewers_flag` echoes the ORIGINALLY-requested value (`runtime` or `full`) — downgrades do NOT rewrite the requested flag, so the audit trail preserves operator intent. Two new fields are set: `invocation.runtime_downgraded = true` AND `invocation.runtime_downgrade_reason = "<reason>"`. The reason string is one of `"status_401"`, `"redirect_to_login:<full-Location-URL>"`, `"login_form_in_200_body"`, or `"timeout"`. (Cross-step contract with Aggregation § Audit-trail JSON sidecar schema: these two fields are part of the `invocation` object's REQUIRED schema and the example block above includes them.)
-- For `--reviewers full`, the 5 code lenses still run — only the runtime lenses are dropped. `aggregated_verdict.result` is computed from the code-lens verdicts as usual.
-- For `--reviewers runtime` (pure runtime mode), downgrade means runtime lenses are dropped AND the 5 code lenses do NOT run (they weren't selected). The 5-element-prefix contract is honored by emitting all 5 code-lens entries with `overall_verdict: "SKIPPED"` and `findings: []` (skipped because they weren't selected, not because of plan-conformance's gracefully-skip rule — the SKIPPED verdict shape is the same; the rationale string differentiates: `"Skipped: --reviewers runtime selected, code lenses not requested"`). The aggregator emits `aggregated_verdict.result == "NEEDS-WORK"` with rationale citing the runtime downgrade. The operator can re-invoke with `--force-runtime` if the probe was a false positive, or downgrade the invocation to `--reviewers code` if static review is sufficient.
+- For `--reviewers full`, the 6 code lenses still run — only the runtime lenses are dropped. `aggregated_verdict.result` is computed from the code-lens verdicts as usual.
+- For `--reviewers runtime` (pure runtime mode), downgrade means runtime lenses are dropped AND the 6 code lenses do NOT run (they weren't selected). The 6-element-prefix contract is honored by emitting all 6 code-lens entries with `overall_verdict: "SKIPPED"` and `findings: []` (skipped because they weren't selected, not because of plan-conformance's gracefully-skip rule — the SKIPPED verdict shape is the same; the rationale string differentiates: `"Skipped: --reviewers runtime selected, code lenses not requested"`). The aggregator emits `aggregated_verdict.result == "NEEDS-WORK"` with rationale citing the runtime downgrade. The operator can re-invoke with `--force-runtime` if the probe was a false positive, or downgrade the invocation to `--reviewers code` if static review is sufficient.
 
 **Cross-step schema parity (producer-consumer-drift prevention).** The two fields above (`runtime_downgraded` and `runtime_downgrade_reason`) are owned jointly by this section AND by the Aggregation § Audit-trail JSON sidecar schema example block. The example block has been updated in the same diff that introduced this section. If a future change renames either field, update both sites in the same diff — drift between the two sites is a `producer-consumer-drift` finding under the anti-pattern catalog (see Anti-pattern catalog § `anti-pattern: producer-consumer-drift`).
 
@@ -819,7 +927,7 @@ and `docs/investigations/review-agents/34-hitl-deferral.md`.
 
 Each entry in `deferred_uat_items[]` is a five-field dict — `reason` (one-sentence prose naming WHAT the reviewer cannot reach and WHY, operator-facing), `covered_lenses` (the lens_ids whose verdicts DID complete a useful review; empty `[]` when no lens covered any part of the deferred slice), `needs_verification` (one sentence specific enough that an operator coming in cold knows what to look at — not "verify it works" but "verify the new sprites render and FPS stays above 30 during the walkthrough"), `recommended_commands` (array of copy-paste-ready shell commands per the workspace's `feedback_copy_paste_commands.md` rule; `#`-prefixed lines are operator-facing comments inside the same fenced block, NOT executed), and `uat_id` (the M<N> handoff identifier per `feedback_name_manual_verification_handoff.md`). All five are REQUIRED; the orchestrator drops partial entries during aggregation.
 
-M-numbering is implemented in `scripts/aggregate.py`'s `assign_m_numbers(deferred_items)` function, whose docstring is the canonical convention spec. Summary: within a single review-deep invocation, items are numbered starting at `M1` in lens-emission order (lens-spawn order is correctness → bugs → test-quality → style → plan-conformance → runtime lenses); across invocations the numbering RESETS to M1 (review-deep does NOT track prior invocations — that's `/build-phase`'s append-only Manual UAT block in `plan.md`); the operator-facing cue is an explicit `Please run M<N> next.` line as the last thing in the markdown summary, taking whichever is the lowest M-number in the current sidecar's `deferred_uat_items[]`. Operators who want review-deep's deferrals merged into the plan-level M-series copy them by hand into the plan's Manual section, re-numbering at the open slot (the M-naming-trap caveat in `feedback_name_manual_verification_handoff.md` applies — grep the plan's existing M-series first to find the free slot before reusing a number).
+M-numbering is implemented in `scripts/aggregate.py`'s `assign_m_numbers(deferred_items)` function, whose docstring is the canonical convention spec. Summary: within a single review-deep invocation, items are numbered starting at `M1` in lens-emission order (lens-spawn order is correctness → bugs → security → test-quality → style → plan-conformance → runtime lenses); across invocations the numbering RESETS to M1 (review-deep does NOT track prior invocations — that's `/build-phase`'s append-only Manual UAT block in `plan.md`); the operator-facing cue is an explicit `Please run M<N> next.` line as the last thing in the markdown summary, taking whichever is the lowest M-number in the current sidecar's `deferred_uat_items[]`. Operators who want review-deep's deferrals merged into the plan-level M-series copy them by hand into the plan's Manual section, re-numbering at the open slot (the M-naming-trap caveat in `feedback_name_manual_verification_handoff.md` applies — grep the plan's existing M-series first to find the free slot before reusing a number).
 
 The markdown rendering for the `## Deferred to operator UAT` section is implemented in `scripts/aggregate.py`'s `render_markdown` function. Per item: H3 `### M<N>: <reason>`, bullet `- **Covered lenses:** <comma-separated names or "none">`, bullet `- **Needs verification:** <needs_verification>`, bullet `- **Commands to run:**` followed by a fenced powershell block (workspace default — operators on POSIX adapt) of the `recommended_commands` array one-per-line. The H2 section is PRESENT when the markdown header is `# review-deep: DEFERRED-TO-UAT` or `# review-deep: NEEDS-WORK + DEFERRED-TO-UAT`, and ABSENT otherwise. Section / field renames MUST touch both `scripts/aggregate.py` AND this paragraph in the same diff (producer-consumer-drift prevention).
 
@@ -831,7 +939,7 @@ kiosk-mode review would emit:
 ```json
 {
   "reason": "Auth-gated child kiosk UX at /child requires PIN-entry the runtime probe cannot reach.",
-  "covered_lenses": ["correctness", "bugs", "test-quality", "style", "plan-conformance"],
+  "covered_lenses": ["correctness", "bugs", "security", "test-quality", "style", "plan-conformance"],
   "needs_verification": "After PIN entry, the child kiosk shows the new 'energy elements' sprites and the sprite-rendering performance does not drop below 30 FPS during the 60-second walk-through.",
   "recommended_commands": [
     "uv run python -m toybox serve --port 4000",
@@ -852,7 +960,7 @@ vary by diff. The shape is canonical; the content is realistic.
 
 ## Cross-references
 
-- `~/.claude/skills/review-gauntlet/SKILL.md` — sibling skill, the four-pass parent gauntlet
+- `~/.claude/skills/review-gauntlet/SKILL.md` — lean profile over this engine (terse PASS/NEEDS-WORK, no JSON sidecar)
 - `~/.claude/skills/review-proof/SKILL.md` — primary-source verification discipline
 - `dev/docs/investigations/review-agents/README.md` — the 35-file investigation set seeding this skill (paths shown from the dev/ workspace root)
 - `dev/.claude/rules/code-quality.md` — anti-pattern catalog source (the bugs lens references it by name)

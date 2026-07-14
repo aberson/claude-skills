@@ -321,7 +321,7 @@ When `--dry-run` is set, after the queue is resolved, print to stdout:
 4. Skills excluded by skip-list (one per line, with reason `skip-list: <embedded|--skip-list extension>`).
 5. Skills excluded by the cross-night-resume filter (one per line, with the `results.tsv` mtime).
 
-Literal example output for a 2-skill auto-discovered queue (session-wrap eligible, bug-fix fresh-skipped, skill-evolve skip-listed) — used by integration tests as a string-equality target. ASCII hyphens throughout (no em-dashes per `.claude/rules/windows-shell.md` § Shell args):
+Literal example output for a 2-skill auto-discovered queue (session-wrap eligible, user-debug fresh-skipped, skill-evolve skip-listed) — used by integration tests as a string-equality target. ASCII hyphens throughout (no em-dashes per `.claude/rules/windows-shell.md` § Shell args):
 
 ```
 Resolved queue (1 skill):
@@ -337,7 +337,7 @@ Excluded by skip-list:
   skill-evolve  (skip-list: --skip-list extension)
 
 Excluded by cross-night-resume filter:
-  bug-fix  (results.tsv mtime: 2026-05-23T22:15:04Z)
+  user-debug  (results.tsv mtime: 2026-05-23T22:15:04Z)
 ```
 
 Then EXIT 0 without entering Phase 2 or taking the lock file. `--dry-run` does NOT touch the lock; it is a pure inspect-and-exit mode per [`.claude/rules/plan-and-issue-flow.md` § "Autonomous-by-default skills"](../../rules/plan-and-issue-flow.md) (preview behavior uses an opt-in flag, never an after-the-fact prompt).

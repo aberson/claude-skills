@@ -1,19 +1,18 @@
 ---
-name: user-fix
-description: Diagnose and fix a bug end-to-end with forced primary-source investigation before any code change. Independently reproduces the bug, designs a fix, delegates implementation to build-step, then verifies the original symptom is gone. Built to break the command-paste loop with the user when a problem keeps circling between you and the agent. Invoke as "/user-fix --symptom '...' [flags]".
+name: user-debug
+description: Diagnose and fix a bug end-to-end with forced primary-source investigation before any code change. Independently reproduces the bug, designs a fix, delegates implementation to build-step, then verifies the original symptom is gone. Built to break the command-paste loop with the user. Invoke as "/user-debug --symptom '...' [flags]".
 user-invocable: true
 ---
 
-# User Fix
+# User Debug
 
 Run a bug report end-to-end: investigate, reproduce, design, fix, verify.
-Reach for it when a problem keeps circling between you and the agent — it
-breaks the command-paste loop by having the agent do the triage itself.
+Avoid the command-paste loop with the user.
 Run diagnostic commands yourself, read logs yourself, and verify CLI
 suggestions against argparse before invoking them.
 ## When to use
 
-Use `/user-fix` when:
+Use `/user-debug` when:
 - Something is broken and you want a fix, not just a discussion.
 - You have a symptom (log line, error, screenshot) but not a confirmed root
   cause.
@@ -34,7 +33,7 @@ Use something else when:
 | `--repro` | no | -- | Command or steps to reproduce. If omitted, the skill derives one from the symptom. |
 | `--issue` | no | -- | GitHub issue number to link/close. |
 | `--triage` | no | `quick` | `quick` (worktree + reviewers) or `investigate-only` (Diagnosis Block then stop). `full` is accepted as a deprecated synonym for `quick` — the prior TDD-driven `full` mode delegated to `/build-step-tdd`, which was archived 2026-05-24 after 0 invocations. |
-| `--review` | no | `code` | `none`, `code` (4-pass review-gauntlet), `auto` (gates only). Applies to both quick and full. |
+| `--review` | no | `code` | `none`, `code` (review-gauntlet lean profile), `auto` (gates only). Applies to both quick and full. |
 | `--max-iter` | no | 3 | Max developer iterations inside the delegated build skill. |
 | `--skip-verify` | no | false | Skip Step 5 (verify-against-original-repro). DANGEROUS — only use when the repro is too expensive or impossible from the skill's environment (multi-hour soak, hardware-bound, live opponent required). The skill prints a loud warning and records the skip in the final report. |
 
@@ -65,7 +64,7 @@ Use something else when:
    ```bash
    git status --porcelain
    # If changes exist:
-   git stash push -m "fix-bug pre-run state" --include-untracked
+   git stash push -m "user-debug pre-run state" --include-untracked
    ```
 
 ### Step 1 — Investigation (forced; output is a Diagnosis Block, not a fix)
@@ -128,10 +127,19 @@ $ <command>
 
 Stop on `--triage investigate-only`: hand to user.
 
+**Feature-shaped, not a bug?** If Step 1's investigation concludes the symptom is not a
+defect — the code works as designed and the ask is really designed, multi-step work —
+that is the routing web's bug→plan direction: follow
+[`skill-pipeline.md § Re-route contract`](../_shared/skill-pipeline.md) instead of
+forcing a fix. The correct-rail seed is a `/plan-feature` seed built from the Diagnosis
+Block; write back to the intake ledger when one exists, per the contract, and stop.
+
 ### Step 2 — Independent reproduction (always)
 
-Run an Explore sub-agent in parallel and give it the symptom and repro
-instructions, but **NOT** the suspected root cause.
+Run an Explore sub-agent in parallel (dispatch with explicit `model: sonnet` —
+this is a diagnostic-diversity arm; it must never inherit an escalated session,
+or escalation would strengthen the independence check itself) and give it the
+symptom and repro instructions, but **NOT** the suspected root cause.
 Pass it one job: come to its own conclusion, then we compare:
 - Diagnoses match → confidence becomes high, proceed; **but matching
   MEDIUM confidence does NOT upgrade to high**.
@@ -179,7 +187,8 @@ Apply one resolution:
    explicitly acknowledge the divergence.
 4. **Tie-breaker third sub-agent** — only after Option 1 re-investigation
    has been tried and the two diagnoses still diverge. Spawn a FRESH
-   sub-agent given only the symptom + repro instructions and NEITHER
+   sub-agent (explicit `model: sonnet`, same pin as Step 2's arm) given
+   only the symptom + repro instructions and NEITHER
    prior diagnosis (same constraint as Step 2's original independent
    sub-agent). Its independent verdict breaks the tie or confirms the
    divergence is genuine (in which case escalate to Option 2 — surface
@@ -309,7 +318,7 @@ Continue if verify passed (or was skipped):
 5. Report:
 
 ```text
-fix-bug complete
+user-debug complete
   Triage: quick | investigate-only
   Diagnosis confidence: high | medium | low (independently confirmed: yes | no | diverged)
   Files changed: N
@@ -328,7 +337,7 @@ Bug investigation is the highest-risk scenario for context loss. Hypotheses form
 ruled out, repro conditions confirmed, root cause narrowed — all of this lives in context,
 none of it reaches disk until the fix ships (or at all if compaction fires mid-investigation).
 
-user-fix MUST write to `current.md` at 6 trigger points during execution.
+user-debug MUST write to `current.md` at 6 trigger points during execution.
 Write at the moment of discovery — NOT at fix completion. The dead ends list IS the
 investigation state.
 
@@ -372,7 +381,7 @@ or
 
 **Completed** (trigger 6 — append):
 ```
-- [<sha>] user-fix [bug description]: [root cause summary] — fixed
+- [<sha>] user-debug [bug description]: [root cause summary] — fixed
 ```
 
 **Critical Gotchas** (trigger 5 — append):
@@ -383,7 +392,7 @@ or
 ### Schema reference
 
 Full field definitions, overwrite/append rules, and lifecycle:
-`.claude/references/task-state-schema.md`
+`.claude/references/task-state-schema.md` (workspace reference, not published in this mirror)
 
 ---
 

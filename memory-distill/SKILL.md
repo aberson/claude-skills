@@ -1,6 +1,6 @@
 ---
 name: memory-distill
-description: Post-mortem-style distillation of recent feedback memories. Pick 3-5, walk through them one at a time asking "did I get this right? what's the next layer?", then surface latent principles that several memories point at but none articulate. Use when memories feel stale, when the same correction keeps recurring, or periodically to consolidate. Works from concrete recent evidence — not vibes.
+description: Post-mortem-style review of recent feedback memories. Pick 3-5, walk through them one at a time asking "did I get this right? what's the next layer?", then surface latent principles that several memories point at but none articulate. Use when memories feel stale, when the same correction keeps recurring, or periodically to consolidate. Works from concrete recent evidence — not vibes. Invoke as "/memory-distill".
 user-invocable: true
 ---
 

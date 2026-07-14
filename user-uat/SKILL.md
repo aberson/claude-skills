@@ -1,10 +1,12 @@
 ---
 name: user-uat
-description: Run an already-clear UAT block FOR the operator — execute each step, capture the real output, and auto-judge only the mechanically-checkable ones (exit code, output match, refusal text, DB/HTTP/file/log); escalate every judgment call with evidence. Removes the run-command → paste-output → relay loop. Use when the operator has a concrete UAT/manual-smoke block (a plan M-step, a "commands + what to look for" table, or ad-hoc "run these, expect these") and wants the mechanical tier done for them. Invoke as "/user-uat [source] [--deep] [--dry-run] [--yes-side-effects]".
+description: Run an already-clear UAT block FOR the operator — execute each step, capture the real output, and auto-judge only the mechanically-checkable ones (exit code, output match, refusal text, DB/HTTP/file/log); escalate every judgment call with evidence. Removes the run-command → paste-output → relay loop. With --ui, also drives + vision-judges the visual-tier steps via /judge-ui instead of escalating them. Use when the operator has a concrete UAT/manual-smoke block (a plan M-step, a "commands + what to look for" table, or ad-hoc "run these, expect these") and wants the mechanical tier done for them. Invoke as "/user-uat [source] [--deep] [--ui] [--dry-run] [--yes-side-effects]".
 user-invocable: true
 ---
 
 # User UAT
+
+> **Judging doctrine:** the mechanical-gates-first, evidence-on-every-verdict, and low-confidence-escalates invariants behind this skill's partition live in [`_shared/judge-core.md`](../_shared/judge-core.md) — this skill instantiates them for the UAT-execution case.
 
 Execute an **already-clear** UAT block so the operator doesn't have to be the mechanical
 relay (run command → eyeball output → paste it back). The skill runs each step, captures
@@ -31,6 +33,7 @@ human. The win is the mechanical tier — which is most of the volume.
 /user-uat path/to/plan.md#M4    # run the M-step at this anchor
 /user-uat --dry-run             # classify + print what WOULD run (mechanical / side-effectful / escalated); run nothing
 /user-uat --deep                # also agent-JUDGE the judgment-class checks; each flagged 'agent-judged: <verdict> — confirm?'
+/user-uat --ui                  # drive + vision-JUDGE the visual-tier steps via /judge-ui instead of escalating them to you
 /user-uat --yes-side-effects    # auto-run side-effectful steps too (trusted flow); default gates them
 ```
 
@@ -44,20 +47,23 @@ isn't deterministic.** Classify every step's *action* and *verify* (separately) 
 |---|---|---|
 | **Mechanical** | exit code, "stdout contains X", "refuses with Y", a DB row / count, HTTP status, file on disk, a log line | **Auto-judge** PASS/FAIL — show the observed value as evidence |
 | **Agent-judgeable** | "output looks grounded", "the ship-vs-park call was right", a diff reads sensibly | **Escalate** with evidence (default). With `--deep`: agent assesses too, labeled `agent-judged: <verdict> — confirm?` |
-| **Human** | visual / layout / animation, audio, real-device, kid-facing feel, anything credentialed or physical the agent can't drive | **Always escalate** — a crisp one-line ask, never a verdict |
+| **Visual** *(needs `--ui`)* | a **rendered screen state** visible in one browser frame — layout, a component, copy, a list/table, "the right screen showed" | **Without `--ui`: escalate (Human).** With `--ui`: drive + vision-judge via `/judge-ui` — read-back-cross-checked; `UNCERTAIN → escalate`, never auto-PASS |
+| **Human** | **animation / motion**, audio / sfx, real-device input, kid-facing feel, anything credentialed or physical the agent can't drive | **Always escalate** — a crisp one-line ask, never a verdict |
 
 **When classification is ambiguous, treat the verify as human and escalate.** A
 mechanical-judgement applied to a judgment-class check is exactly how the blind spot leaks
-back in.
+back in. **Even with `--ui`, motion / audio / feel stay Human** — a screenshot is one frame; it
+can't see a countdown tick or hear a sound.
 
 ## Flow
 
 1. **Ground + classify (no guessing).** For each step emit a classification line:
    `Step N (source: file:line / M-anchor) — action: <command>; verify: <expectation>; Tier: Mechanical / Agent-judgeable / Human`
    The source citation must appear on the per-step classification line, not just in a header.
-   Valid tiers are exactly three: **Mechanical**, **Agent-judgeable**, **Human** — there is no
-   "Ungroundable" category. If a step can't be grounded or is ambiguous → stop, report it,
-   and point at `/review-uat`.
+   Valid tiers are **Mechanical**, **Agent-judgeable**, **Human** — plus, only when `--ui` is
+   passed, **Visual** (a vision-judgeable subset carved out of Human: a rendered screen state, not
+   motion/audio/feel). There is no "Ungroundable" category. If a step can't be grounded or is
+   ambiguous → stop, report it, and point at `/review-uat`.
 2. **Safety gate.** Tag each command read-only/preview vs **side-effectful** (mutates state,
    is outward-facing, or is hard to reverse — e.g. a real `goblin do` that auto-ships into a
    sibling repo, a deploy, an external send, a DB write/drop, a `git push`, starting a process
@@ -72,10 +78,21 @@ back in.
    concrete expectation. Show the **actual observed value** inline — data, not editorializing. A
    mechanical **FAIL stops the run** (don't barrel past a failure into dependent steps), then
    still emit the step-5 report for the steps that ran + which step failed (observed-vs-expected).
+   **Long-running actions** (a server start, a watcher): run them in the **background**, then poll
+   a **readiness probe** (health endpoint, listening port, or an expected log line) before running
+   any dependent verify — never block the run on a foreground server. A probe that never comes up
+   within its budget is a mechanical **AUTO-FAIL** with the captured log tail as evidence, and
+   stops the run like any other mechanical FAIL.
 4. **Judgment tier.** For agent-judgeable / human steps: present the captured evidence + the
    expectation and **escalate** (default). With `--deep`, also give the agent's assessment for
    the agent-judgeable ones — flagged `agent-judged: <verdict> — confirm?`, with any uncertainty named.
    Human-tier steps always escalate regardless of `--deep`.
+   **Visual-tier steps:** without `--ui`, escalate like Human. With `--ui`, delegate to
+   `/judge-ui` — it drives the screen, captures stage screenshots, and renders a vision verdict
+   **cross-checked against an API/DB read-back**; a corroborated PASS lands in the step-5 report
+   with its evidence (screenshot + read-back value), and an `UNCERTAIN`/low-confidence/pixels-vs-
+   read-back-disagree result falls back to the **`Needs you`** section. Use the project adapter for
+   bring-up + auth (e.g. toybox `/uat-ui`); never drive an app instance you don't own.
 5. **Report (terse).** One line per step — **plain text, not a markdown table**:
    `step → AUTO-PASS / AUTO-FAIL / ESCALATED → one-line evidence`
    Example: `M4 row 1 → AUTO-PASS → exit 0, stdout contains "shipped"`
@@ -95,12 +112,20 @@ back in.
   ONE disambiguating question — don't rubber-stamp (per `feedback_uat_pushback_on_state_mismatch`).
 - **Show the data.** Every verdict cites the observed value; a verdict with no evidence is a
   defect.
+- **`--ui`: never drive an app instance you don't own.** A vision flow that logs in with a UAT
+  PIN against the operator's real (or a parallel session's) app can lock out their account. Use
+  the project adapter's isolated bring-up, and check port ownership before driving.
 
 ## Relationship to other skills
 
-- **`/review-uat`** — the refinement partner. It tightens a fuzzy UAT (and can `--exec` a
-  refined one); `user-uat` is the terse *run-an-already-clear-one* path and hands fuzzy input
-  back to it. Refine with review-uat, then run with user-uat.
+- **`/review-uat`** — the refinement partner. It tightens a fuzzy UAT, and its `--exec` delegates
+  execution of the refined script HERE — `user-uat` is `/review-uat --exec`'s execution target, as
+  well as the terse *run-an-already-clear-one* path that hands fuzzy input back to it. Refine with
+  review-uat, then run with user-uat.
+- **`/judge-ui`** — the visual-tier executor `--ui` delegates to: drives a browser flow,
+  captures stage screenshots, and renders a vision verdict cross-checked against a read-back
+  (`UNCERTAIN → Human` fallback). Project adapters (e.g. toybox `/uat-ui`) supply its bring-up +
+  auth. Pairs with `--deep` the way `judge-ui` pairs with this skill's Human-fallback.
 - **`/verify`** — runs the app to confirm a code change works; `user-uat` runs a *defined UAT
   script*, partitioning auto-vs-human across its steps.
 - **`/build-phase`, `/build-step`** — their `Type: operator` / "Manual UAT" outputs are exactly

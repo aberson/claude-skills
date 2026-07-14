@@ -1,10 +1,12 @@
 ---
 name: build-step
-description: Execute one build step end-to-end. Developer writes, reviewers gate, changes merge. Configurable isolation (worktree/docker), review style (auto/code/runtime/full), optional UI.
+description: Execute one build step end-to-end. Developer writes, reviewers gate, changes merge. Configurable isolation (worktree/docker), review style (auto/code/deep/runtime/full), optional UI.
 user-invocable: true
 ---
 
 # Build Step
+
+> **Judging doctrine:** the reviewer-gate invariants here (producer never grades itself, weak/local models never gate, a deterministic Claude gate consolidates) live in [`_shared/judge-core.md`](../_shared/judge-core.md) §5–§6 — this skill instantiates them for the dev→review→merge loop.
 
 Execute a single build step end-to-end: developer writes code, reviewer(s) gate it,
 approved changes merge back to the project.
@@ -14,7 +16,7 @@ Three independent knobs control how it runs:
 | Knob | Flag | Options | Default |
 |---|---|---|---|
 | Isolation | `--isolation` | `worktree`, `docker` | `worktree` |
-| Review style | `--reviewers` | `auto`, `code`, `runtime`, `full` | `auto` |
+| Review style | `--reviewers` | `auto`, `code`, `deep`, `runtime`, `full` | `auto` |
 | UI evidence | `--ui` | flag (present = on) | off |
 
 Any combination is valid. Examples:
@@ -37,7 +39,7 @@ Any combination is valid. Examples:
 | `--acceptance` | no | -- | Optional acceptance target (the step's `Done when:`, forwarded by `/build-phase`'s Step 0 extract + Step 2 dispatch). Injected into the **Step 2 developer prompt only** as guidance — feeds no gate, reviewer, or verdict path. Reviewer-prompt injection (Step 6) is DEFERRED pending the M1 A/B measurement. |
 | `--max-iter` | no | 3 | Max developer-reviewer iterations |
 | `--isolation` | no | `worktree` | `worktree` or `docker` |
-| `--reviewers` | no | `auto` | `auto`, `code`, `runtime`, or `full` |
+| `--reviewers` | no | `auto` | `auto`, `code`, `deep`, `runtime`, or `full` |
 | `--ui` | no | false | Enable Playwright evidence capture |
 | `--start-cmd` | no | -- | Shell command to start the app (required when `--ui` or `--reviewers runtime`) |
 | `--url` | no | -- | Base URL for Playwright (required with `--start-cmd`) |
@@ -71,12 +73,12 @@ If automated gates fail, the developer fixes them before code reviewers see the 
 
 **Optional local-judge offload for the Style reviewer (switchboard — WIRED BUT INERT,
 DISABLED BY DEFAULT).** Only the Style reviewer is cheap enough to consider routing to a
-local model (offload-scan task_class `build-step-style`; Switchboard Decision 9). Correctness,
+local model (tier-offload task_class `build-step-style`; Switchboard Decision 9). Correctness,
 Bugs, and Test-Quality are deep-reasoning drift-catchers (`code-quality.md`) and ALWAYS stay
 on Claude. **This slice ships DISABLED** (`build-step-style: false` in the offload config) and
 MUST stay disabled until the gate invariant below holds, because build-step's reviewers gate
 the merge **directly** at Step 7 — routing Style local without a Claude final judge would make
-the weak model the gate (forbidden, Decision 3). The gated branch is present for symmetry:
+the weak model the gate (forbidden — judge-core §5.7; Decision 3). The gated branch is present for symmetry:
 when (and only when) `build-step-style` is enabled in config, route the Style reviewer through
 `python -m switchboard judge --site build-step-style --prompt-file <style-reviewer-prompt-file>`
 (prints one JSON object, always exits 0); use a **verdict** as the Style reviewer's ADVISORY
@@ -85,7 +87,22 @@ input and on a **defer** fall back to the Claude Style reviewer. Because the con
 runs all four reviewers on Claude **exactly as before** — this skill is fully inert today.
 **Precondition to ever flip it to `true`:** Step 7 (Aggregate verdict) must be confirmed as the
 Claude final judge that consolidates findings (it already is — see the note there), so the
-local Style verdict only advises and never gates.
+local Style verdict only advises and never gates (the cascade pattern — judge-core §5.7).
+
+### `deep`
+Delegate the review to `/review-deep` (the full-depth engine behind review-gauntlet's lean
+profile) **INSTEAD OF** the gauntlet's four arms — review-deep's code lenses superset the
+gauntlet's, so running both doubles cost for zero independence gain. Use for steps whose blast
+surface matches the high-stakes classes per `review-deep` SKILL.md's header (the trigger-list
+owner — cite it, never restate it); `/plan-review` §27 routes such steps here at plan time by
+rewriting `--reviewers code` → `--reviewers deep` on the step's Flags line.
+
+Code-lens-only: like `code`, requires NO `--start-cmd`/`--url`. Automated gates
+(typecheck/lint/test) still run first as a prerequisite, exactly as for `code`.
+
+Model tiers are review-deep's own per-lens defaults — do NOT re-pin arms here (review-deep
+owns its lens→tier map). The conditional Fable escalation (`--model-override bugs=fable`,
+pending #289) stays an operator call per CLAUDE.md's model paragraph — never auto-set it.
 
 ### `runtime`
 Run three parallel evidence-based reviewers:
@@ -108,6 +125,8 @@ Requires `--start-cmd` and `--url`. Implies `--ui`.
 
 1. **Validate flags:**
    - If `--reviewers runtime` or `--reviewers full`: require `--start-cmd` and `--url`
+   - `--reviewers deep` requires nothing beyond `code`'s prerequisites — code lenses only,
+     no `--start-cmd`/`--url` (do NOT halt a deep step for missing runtime fields)
    - If `--ui`: require `--start-cmd` and `--url`
    - If `--isolation docker`: verify Docker is running (`docker info`)
 
@@ -171,7 +190,7 @@ if [ -d frontend ] && [ -f frontend/package.json ]; then
   (cd frontend && npm install --silent)
 fi
 
-# See [`feedback_worktree_venv_rebuild`](~/.claude/projects/<project>/memory/feedback_worktree_venv_rebuild.md)
+# See workspace memory `feedback_worktree_venv_rebuild`
 # -- skipping these has caused multiple Windows-bind-wrong-Python failures
 # and silent missing-node-modules errors.
 ```
@@ -188,7 +207,9 @@ Read results from `workspace/results/`.
 exists in the project root. If it does, read it and append its contents to the
 developer prompt as import/type reference material.
 
-Spawn a sub-agent (Agent tool):
+Spawn a sub-agent (Agent tool). The developer arm deliberately carries **no
+`model:` pin** — build quality tracks the session tier by design; the pinned
+Sonnet reviewer array (Step 6) is the diversity layer:
 
 ```text
 You are the developer agent in a build step. Your job is to write code
@@ -226,7 +247,15 @@ sweeps pre-existing format debt into the diff. If `--check` flags files you
 touched, fix manually inside your diff scope; if it flags files you did NOT
 touch, report "pre-existing format debt in <files>" -- do not auto-fix.
 
-Report what you changed and the test results.
+RETURN (keep it terse -- see dev/.claude/rules/subagent-economy.md): your final
+message is the tool result and stays resident in the orchestrator's window for the
+rest of the phase, so do NOT paste the diff or a long narrative. Write any detailed
+write-up (full change rationale, per-file notes, raw gate output) to
+`<worktree>/.build-step/dev-report.md` and return ONLY: (1) a one-line verdict
+(DONE / BLOCKED + why), (2) the `git diff --stat` line(s), (3) the one-line test
+result (e.g. `42 passed`), (4) any pre-existing-format-debt note, (5) the
+`dev-report.md` path. The orchestrator reads `dev-report.md` only if it needs detail
+(e.g. on iteration).
 ```
 
 **Orchestrator-side `--check` follow-up.** On reported pre-existing format
@@ -263,7 +292,7 @@ cd "$WORKTREE"  # or container
 If any fail and `--reviewers auto`: this IS the rejection. Pass errors back to
 developer, go to Step 2. No reviewer agents needed.
 
-If any fail and `--reviewers code|runtime|full`: developer must fix before
+If any fail and `--reviewers code|deep|runtime|full`: developer must fix before
 reviewers see the diff. Pass errors back to developer, go to Step 2.
 
 ### Step 5 -- App lifecycle (when `--ui` or `--reviewers runtime|full`)
@@ -382,6 +411,10 @@ Do NOT pass to the developer agent as a fix-this finding; no developer fix can r
 
 **Ship-gate re-check** (run the canonical block from Step 5.5): avoid spawning 10+ min of reviewer work on a diff a parallel session already shipped.
 
+**Spawn ALL reviewers for the mode in ONE tool message** — a single assistant turn carrying N parallel Agent (or Workflow `agent()`) calls, never one-at-a-time. The reviewers are independent, so serial spawning only adds wall-clock (≈60–85% slower) for zero independence gain — independence comes from context isolation, not serial order (see `dev/.claude/rules/subagent-economy.md`).
+
+**Reviewer returns are terse + file-backed** (per `dev/.claude/rules/subagent-economy.md`): instruct each reviewer to return ONLY `{verdict, finding-count, the single highest-severity finding}` and to write its full findings list to `<worktree>/.build-step/review-<lens>.{json,md}`. Step 7 reads those files to aggregate; the orchestrator window must not hold N full findings dumps resident for the rest of the run. (Workflow `schema:` reviewers already return bounded rows — keep them `{severity, title, file:line, fix}`, never re-quoted file bodies.)
+
 Based on `--reviewers`:
 
 #### `auto` -- no agents
@@ -389,6 +422,9 @@ Verdict comes from Step 4 automated gates. If all pass: APPROVED. Skip to Step 7
 
 #### `code` -- 4 parallel agents
 Each receives: problem statement, full diff, content of touched files.
+Dispatch all four with explicit `model: sonnet` — reviewer *diversity* carries the
+quality here; arms must never inherit an escalated session (tier policy, CLAUDE.md
+model paragraph).
 
 1. **Correctness Reviewer** -- logic vs intent, missing edge cases, inverted conditions,
    silent behavior breaks.
@@ -399,8 +435,28 @@ Each receives: problem statement, full diff, content of touched files.
 4. **Style & Conventions Reviewer** -- only flags deviations from ACTUAL surrounding
    code conventions, not generic best practices.
 
+#### `deep` -- delegate to /review-deep (no gauntlet arms)
+Do NOT spawn the four gauntlet reviewers — review-deep's code lenses superset them (running
+both doubles cost for zero independence gain). Invoke `/review-deep` once (Skill tool) with:
+
+- `--prompt` = the problem statement (plus the acceptance target when `--acceptance` is present)
+- `--diff` = the worktree diff captured at Step 3
+- `--plan-step <plan-path>:<step-id>` when the orchestrator knows the plan file + step id
+  (enables the plan-conformance lens; omit otherwise — the lens SKIPs cleanly)
+- `--output-dir <worktree>/.review-deep/`
+- on iteration ≥ 2, `--prior-sidecar <previous iteration's sidecar path>` (enables
+  review-deep's persistent-disagreement aggregator rule)
+
+review-deep runs its code lenses with its own per-lens model tiers (no `model: sonnet` re-pin
+here), applies its deterministic aggregator, and returns a pre-aggregated verdict
+(`PASS | NEEDS-WORK | DEFERRED-TO-UAT`) plus a JSON audit-trail sidecar at
+`<worktree>/.review-deep/<timestamp>.json`. The sidecar replaces the per-lens
+`review-<lens>.{json,md}` files the gauntlet arms would have written — Steps 7 and 9 read
+findings from the sidecar's `lens_verdicts[].findings[]` instead.
+
 #### `runtime` -- 3 parallel agents
-Each receives: diff plus their evidence slice.
+Each receives: diff plus their evidence slice. Dispatch all three with explicit
+`model: sonnet` (same arm pin as the `code` reviewers).
 
 1. **UI Reviewer (blind-first)** -- screenshots (before/after exercise). Two-phase
    review in a single pass:
@@ -475,7 +531,8 @@ All of the above, simultaneously.
 ### Step 7 -- Aggregate verdict
 
 **This step is the Claude final judge — the consolidating gate (Switchboard Decision 9), and
-it ALWAYS runs on Claude.** It is the structural precondition that makes a future `build-step-style`
+it ALWAYS runs on Claude.** This is the deterministic consolidating gate (judge-core §5.6) and the
+strong GATE that any weak/local verdict defers to (§5.7). It is the structural precondition that makes a future `build-step-style`
 local offload safe: the four `code` reviewers ADVISE, and this normalize-findings + verdict pass
 makes the single PASS / NEEDS-WORK call. If the Style reviewer's findings ever come from the
 local-judge offload (only when `build-step-style` is flipped to `true` in config — `false`
@@ -487,9 +544,19 @@ Claude and this step gates exactly as before.
 - All gates pass: **APPROVED**
 - Any fail: **REJECTED** -- pass errors to developer
 
+**When `--reviewers deep`:** the verdict arrives PRE-AGGREGATED — review-deep's own
+deterministic aggregator already consolidated the lenses, so do NOT re-normalize its findings
+through the table below. The Claude final-judge framing still holds: this step (Claude) reads
+`aggregated_verdict.result` from the sidecar and owns the translation to the terminal verdict —
+`PASS` → **PASS**, `NEEDS-WORK` → **NEEDS WORK** (findings from the sidecar feed Step 9's
+iteration loop), `DEFERRED-TO-UAT` → **PASS with deferral** (surface the sidecar's
+`deferred_uat_items[]` verbatim in the Step 10 report for the phase-end Manual UAT bundle; do
+not iterate the developer on deferrals). The local-offload cascade note above is unaffected —
+review-deep is a Claude-tier instrument, not a weak-model advisor.
+
 **When `--reviewers code|runtime|full`:**
 
-Normalize findings:
+Read each reviewer's full findings from its `<worktree>/.build-step/review-<lens>.{json,md}` file (Step 6 had them return only a terse verdict + top finding). Normalize findings:
 
 | Finding type | Normalized severity |
 |---|---|
@@ -508,6 +575,56 @@ Verdict:
 - **PASS** -- zero high findings AND fewer than 2 medium findings AND (for runtime/full)
   at least one reviewer confirms expected behavior was observed
 - **NEEDS WORK** -- any high finding, or 2+ medium findings, or coverage gate failed
+
+#### Emit the machine-readable verdict (verdict.json)
+
+**Also write** a verdict sidecar so `/build-phase` can consume the result without re-parsing this
+prose return. This is a **THIN translation** of the normalization table above into a structured
+file — NOT adoption of review-deep's `aggregate.py` (we mirror its `result` enum only).
+
+Write `<worktree>/.build-step/verdict.json` (the worktree root this step already uses, convention
+`../worktree_<BRANCH>`; create the `.build-step/` dir if absent). The canonical schema and the
+default-deny consume rule both live in `_shared/build_step_verdict.py` — treat that module as the
+single source of truth; this table is its EMIT-side mirror.
+
+Schema: `{timestamp, result, halt, summary}`
+- `timestamp` — ISO-8601 of when you wrote the verdict.
+- `result` — enum `PASS | NEEDS-WORK | DEFERRED-TO-UAT` (build-step emits `DEFERRED-TO-UAT`
+  only on the `deep` lane, passing review-deep's aggregated verdict through; it is a valid
+  ADVANCE on the consume side. The other lanes never emit it).
+- `halt` — `POST_MERGE_HALT | SHIP_GATE_HALT | null` (the in-band sentinel from the table above,
+  stripped of its trailing colon; `null` when no halt fired).
+- `summary` — one-line human-readable rationale.
+
+Translator mapping (terminal string → `result`):
+
+| build-step terminal string | verdict.json `result` |
+|---|---|
+| `PASS` | `PASS` |
+| `APPROVED` (`--reviewers auto`) | `PASS` |
+| `NEEDS WORK` (a SPACE) | `NEEDS-WORK` (a HYPHEN) |
+| `REJECTED` (`--reviewers auto`) | `NEEDS-WORK` |
+| review-deep `aggregated_verdict.result` (`--reviewers deep`) | passes through unchanged (`PASS` / `NEEDS-WORK` / `DEFERRED-TO-UAT`) |
+
+`halt` derivation: if the verdict was driven by a `POST_MERGE_HALT:` or `SHIP_GATE_HALT:` sentinel
+(Step 8 post-merge gate / Step 5.5 ship-gate), set `halt` to that sentinel **without** the trailing
+colon (`"POST_MERGE_HALT"` / `"SHIP_GATE_HALT"`); otherwise `halt` is `null`. A non-null `halt`
+makes the consumer treat the step as BLOCKED regardless of `result`.
+
+Example (PASS):
+
+```json
+{"timestamp": "2026-06-22T10:15:30Z", "result": "PASS", "halt": null, "summary": "zero high, 1 medium; runtime confirmed expected behavior"}
+```
+
+Example (post-merge halt):
+
+```json
+{"timestamp": "2026-06-22T10:15:30Z", "result": "NEEDS-WORK", "halt": "POST_MERGE_HALT", "summary": "main-project test gate red after merge; merge clobbered prior-step changes"}
+```
+
+The existing prose verdict (PASS / NEEDS WORK) remains the human-facing return — this sidecar is
+**additive**.
 
 ### Step 8 -- On PASS
 
@@ -539,7 +656,7 @@ Verdict:
 
 ### Step 9 -- On NEEDS WORK
 
-Compile findings from ALL reviewers into a single block.
+Compile findings from ALL reviewers into a single block — read each lens's full findings from its `<worktree>/.build-step/review-<lens>.{json,md}` file (Step 6), not from the terse spawn-time returns. On the `deep` lane, read findings from review-deep's JSON sidecar (`<worktree>/.review-deep/<timestamp>.json`, `lens_verdicts[].findings[]`) instead — there are no per-lens gauntlet files.
 
 **Stop-and-audit check (run BEFORE iterating):** If the SAME bug-shape (same invariant violated, same anti-pattern, same producer/consumer drift, same constant duplicated) has been flagged in **three** iterations in a row -- even at different file locations -- STOP iterating, do NOT spawn the developer for another whack-a-mole fix. Instead, follow the Stop-and-audit rule below: grep the entire codebase for the bug-shape, enumerate every site, and report ONE comprehensive audit finding plus a structural regression-test proposal (e.g. assert single source of truth via CI grep, assert object identity not equality). Mark the run **BLOCKED (audit required)** and skip to the BLOCKED report.
 
@@ -572,11 +689,12 @@ If max iterations exhausted: **BLOCKED**
 ```text
 build-step complete
   Isolation: worktree | docker
-  Reviewers: auto | code (4) | runtime (3) | full (7)
+  Reviewers: auto | code (4) | deep (/review-deep delegate) | runtime (3) | full (7)
   Verdict: PASS (iteration N/M)
   Files changed: N
   Gates: typecheck OK, lint OK, test OK
   Code review: correctness OK, bugs OK, tests OK, style OK   (if applicable)
+  Deep review: aggregated <PASS|NEEDS-WORK|DEFERRED-TO-UAT>; audit sidecar .review-deep/<timestamp>.json   (if applicable)
   Runtime: UI OK, backend OK, frontend OK                     (if applicable)
   Tests: X/Y passing
   Issue: #N closed
@@ -644,7 +762,7 @@ is the only exception — it handles the git mechanics. All other triggers are d
 ### Schema reference
 
 Full field definitions, overwrite/append rules, and lifecycle:
-`.claude/references/task-state-schema.md`
+`.claude/references/task-state-schema.md` (workspace reference, not published in this mirror)
 
 ---
 
@@ -673,6 +791,9 @@ bug shape:
 - Worktree: no full isolation from host (but separate working directory)
 - Docker: slower startup, needs Docker Desktop running, needs OAuth token
 - Code reviewers: ~3-5 min per iteration (4 parallel agents)
+- Deep lane: one /review-deep invocation per iteration (code lenses + deterministic
+  aggregation + JSON sidecar; costlier than `code` — reserve for high-stakes steps
+  per review-deep SKILL.md's header)
 - Runtime reviewers: ~5-8 min per iteration (app startup + capture + 3 agents)
 - Full: ~6-10 min per iteration (7 agents)
 - Screenshots consume context window budget -- keep page count reasonable
@@ -681,7 +802,7 @@ bug shape:
 
 ---
 
-## dev-observatory hook (additive; see [`.claude/rules/descriptor-contract.md`](../../rules/descriptor-contract.md))
+## dev-observatory hook (additive; see `.claude/rules/descriptor-contract.md`)
 
 When `--ui` is set, check the chosen bind port against the workspace's canonical map before binding:
 

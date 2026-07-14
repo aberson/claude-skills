@@ -1,12 +1,12 @@
 ---
 name: user-orient
-description: Re-orient the user mid-session via a status snapshot (verified, not-verified, next steps) plus parallel asides. Use when the user asks "where are we", "what's the status", or "remind me what we were doing".
+description: Re-orient the user on the session axis — the state of this conversation/thread — via a status snapshot (verified, not-verified, next steps) plus parallel asides; `--quick` skips all lookups and gives a lightweight three-section thread summary (problem, what we tried, what's left). Use when the user asks "where are we", "what's the status", "remind me what we were doing", "what were we doing", or just wants a quick reminder of the working thread. For project-axis state (a project's plan+git-derived shipped / planned / next / cuttable), use user-pm.
 user-invocable: true
 ---
 
 # User Re-Orientation
 
-This skill produces a status snapshot for a user returning mid-session. Read-only by default; does not mutate memory, plans, or code.
+This skill produces a status snapshot for a user returning mid-session. Read-only by default; does not mutate memory, plans, or code. Two modes: **full** (default — Steps 1-2 below) and **`--quick`** (a no-lookups three-section thread summary — see "Quick mode" below; for in-flow check-ins, not post-gap re-orientation).
 
 
 ---
@@ -79,8 +79,33 @@ One paragraph. What to do RIGHT NOW. Why this over alternatives. If unsure betwe
 
 ---
 
+## Quick mode (`--quick`)
+
+A quick working-memory refresh of the current thread: ~150 words, three sections, no autonomous lookups. Skip Step 1 entirely — fire no tool calls; everything comes from the conversation already in context.
+
+Summarize our current working thread in plain text. Be concise. Cover exactly three things:
+
+**1. Problem** — What are we trying to solve? One or two sentences max. Include the ticket/PR number if applicable.
+
+**2. What we tried** — Bullets. Label each with outcome (`worked`, `didn't fix`, `confirmed`). Actions without outcomes don't count.
+
+**3. Still to do** — What's unresolved or next? Bullet list. If nothing is left, say so.
+
+Never start with preamble, the phrase "here's your recap", or closing remarks. Output just the three sections.
+
+### When `--quick` suffices vs full orientation
+
+Default to `--quick` for in-flow check-ins ("remind me where this thread is") when the thread is live and everything needed to answer is already in context. Run the full six-section orientation when returning fresh or after a context gap. Escalation trigger: if drafting the quick summary reveals you cannot reconstruct state from the thread alone — any "What we tried" bullet whose outcome you would need to read git or files to state honestly — quick mode has hit its design boundary; run the full orientation instead. Don't silently widen scope: switch modes cleanly rather than padding a quick summary with unmarked guesses.
+
+Depth scales by selective retention, not length: a longer thread does NOT earn a longer quick summary — the ~150-word budget is fixed. Collapse each older resolved sub-problem to one state line ("<sub-problem>: resolved (<outcome>)"); keep full detail only on the active sub-thread. If you cannot name a single active sub-thread the summary is refreshing, the thread is too broad for quick mode — run the full orientation.
+
+Compacted-context caveat: when earlier turns have been compacted to a summary, build the quick summary only from the summary + live turns you can actually read. Demote pre-boundary attempts to the fidelity the summary supports — if the summary says "investigated X" with no outcome, do NOT promote it to an invented `worked` / `didn't fix` label — and append a one-line gap flag, e.g. `(earlier context compacted; pre-<X> attempts may be incomplete)`. Do NOT run lookups to backfill the gap — needing to reconstruct lost context is the escalation signal to the full orientation.
+
+---
+
 ## Limitations
 
-- Mid-debugging on a single thread; wants a quick working-memory refresh — use `user-recap` instead.
+- Mid-debugging on a single live thread; wants a quick working-memory refresh — use `--quick` (above), not the full six-section orientation.
+- Project-axis overview — what a project shipped, has planned, could do next, could cut (plan+git-derived) — use `user-pm`.
 - Comprehensive handoff to a fresh context window — use `session-wrap`.
 - Verify a document is self-contained — use `plan-wrap`.

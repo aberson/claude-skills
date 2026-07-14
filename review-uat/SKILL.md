@@ -23,8 +23,8 @@ Iteration goal: a future operator (or a fresh Claude session) can execute the UA
 /review-uat                          # ask user for the draft
 /review-uat path/to/plan.md#step-21  # refine the M-step at this anchor
 /review-uat --apply                  # after refinement, write the result back to the source doc
-/review-uat --exec                   # after refinement, run agent-side blocks live and surface results
-/review-uat --exec --dry-run         # print agent commands without running them
+/review-uat --exec                   # after refinement, delegate execution of the refined script to /user-uat
+/review-uat --exec --dry-run         # delegate with --dry-run: /user-uat prints what WOULD run; nothing executes
 ```
 
 `--apply` and `--exec` are opt-in. Default behavior is read-only describe-only: produce the refined version in chat, do NOT modify the source and do NOT run anything.
@@ -71,9 +71,9 @@ For each step, score:
 | **Ambiguity** | How many valid readings does this have? | Count + list the readings |
 | **Prereq completeness** | What state must hold before this step that isn't stated? | List missing prereqs |
 | **Action — human or agent?** | Does the *doing* need a human? (button press, voice, hardware, out-of-band) | "human" / "agent" |
-| **Verify — human or agent?** | Does the *checking* need a human? (visual / auditory / subjective judgment) | "human" / "agent" / "split" |
+| **Verify — human, vision-judge, or agent?** | Does the *checking* need a human, or can a browser-driven vision-judge do it, or is it a machine probe? | "human" / "vision-judge" / "agent" / "split" |
 
-**Action and Verify are separate decisions.** They almost always split differently. A step can have human action + agent verify (the most common shape). Pure-human verify is rare and should be defended: "why can't this be an HTTP probe / sqlite query / log grep?"
+**Action and Verify are separate decisions.** They almost always split differently. A step can have human action + agent verify (the most common shape). Pure-human verify is rare and should be defended: "why can't this be an HTTP probe / sqlite query / log grep — or, for a *rendered screen*, a `/judge-ui` vision check?" Reserve pure-human verify for motion, audio, and subjective feel.
 
 **Action needs a human when it requires:**
 
@@ -81,11 +81,16 @@ For each step, score:
 - Out-of-band action (second device, parent's phone, recovery procedure)
 - A UI interaction the agent can't drive headlessly (or where Playwright would be more setup than the value justifies)
 
-**Verify needs a human when it requires:**
+**Verify can be a VISION-JUDGE** (a browser-driven screenshot + vision model via `/judge-ui`, run by `/user-uat --ui`) **when it is:**
 
-- Visual rendering judgment (layout, animation, color, "did it flash?", "did the countdown tick?")
+- A **rendered screen state** captured in a single frame — layout, a component present, heading/copy text, a list/table's contents, "the right screen showed, no error banner". Emit these as `Verify (visual — vision-judge)` (below) instead of punting to the human — always paired with the API/DB read-back that corroborates the pixels.
+
+**Verify still needs a HUMAN when it requires:**
+
+- **Motion / animation** ("did it flash?", "did the countdown tick?") — a screenshot is one frame, it can't see motion
 - Auditory judgment (sfx fired, voice quality)
 - Subjective UX (does this feel responsive? is this label clear?)
+- Anything credentialed / physical / real-device a browser can't drive
 
 **Verify does NOT need a human when it asks:**
 
@@ -117,9 +122,13 @@ When the action is a UI button-press but the *consequence* is recorded in the DB
 - <file check, e.g., "ls data/images/toys/ → exactly one .png file matching uuid pattern">
 - <log grep, e.g., "grep 'pin_set' logs/backend.log → 1 INFO line, 0 WARNING">
 
+**Verify (visual — vision-judge via `/judge-ui`):**
+- <a rendered-state check a browser + vision model can judge, in observable terms — e.g., "PinSetup heading reads 'Set parent PIN' and two PIN input fields are visible; no flash of the login screen first" — PAIRED with the read-back that corroborates it (e.g., "and /api/auth/parent/status → pin_set:false")>
+- Omit this block when there's no rendered-state check, or when the only visual checks are motion/audio/feel (those go to Verify (human)). Run via `/user-uat --ui`; on vision-judge uncertainty it falls back to a human ask.
+
 **Verify (human):**
-- <observation that genuinely requires eyes — e.g., "PinSetup heading reads 'Set parent PIN' and two PIN input fields visible", "countdown ticks once per second">
-- <visual / auditory / subjective check ...>
+- <observation that genuinely requires eyes ON MOTION/AUDIO/FEEL — e.g., "countdown ticks once per second", "the chime sound fires", "the transition feels smooth">
+- <auditory / motion / subjective check that a single screenshot can't settle ...>
 
 **Fail signals (what to flag):**
 - <what counts as a regression — e.g., "any flash of the login screen before setup", "countdown stops ticking">
@@ -127,7 +136,7 @@ When the action is a UI button-press but the *consequence* is recorded in the DB
 **Source of truth:** <file:line> — link the code that defines the expected behavior. If the supplied project facts give you only a file and a function/section (no line number), write `<file>:<function-name>` or `<file>:<section-name>`; if even that is unavailable, write `<file> (line unknown)`. **Never** emit a bare filename, `TBD`, `the spec`, or a plan-level descriptor like `project-facts:bullet-N` — those are ungrounded and must instead be flagged as **Blocker: cannot ground** per Step 1.
 ```
 
-If the agent setup or verify is non-trivial, the rewritten step may include short shell blocks. Keep them copy-pasteable AND executable by the agent in `--exec` mode.
+If the agent setup or verify is non-trivial, the rewritten step may include short shell blocks. Keep them copy-pasteable AND executable by `/user-uat` (the `--exec` hand-off target — Step 5.5).
 
 **Before writing any shell block, determine the target shell from the project's CLAUDE.md or workspace instructions.** Shell syntax must match the runtime environment:
 - **Windows / PowerShell (default in many workspaces):** `curl.exe` not `curl` (`curl` aliases to `Invoke-WebRequest` and rejects standard curl flags); backtick (`` ` ``) for line continuation; `$env:VAR` not `$VAR`; `NUL` not `/dev/null`; `ConvertFrom-Json` instead of `python -m json.tool` when piping JSON. **`&&` and `||` chain operators are parser errors in PowerShell 5.1** — split into separate commands or use `; if ($?) { ... }` for conditional chaining; never put multiple install/setup commands in one block with `&&`. For Python projects managed with `uv`: use `uv pip install` not bare `pip` — `pip` is typically not on PATH in uv environments. See `.claude/rules/windows-shell.md` for the full landmine list.
@@ -159,25 +168,18 @@ Produce these, in this order:
 2. **Refined UAT** — the rewritten steps in the canonical format, in a fenced markdown block so the user can copy it back into the plan doc.
 3. **Diff summary** — one line per original step: "Was: ... → Now: ..." with the most important change.
 
-### Step 5.5 — Live execution (if `--exec` was passed)
+### Step 5.5 — Delegated execution (if `--exec` was passed)
 
-After producing the refined UAT, walk the steps in order, doing the agent-side work live and pausing for the human between steps. The goal is to compress the operator's loop to: read the human-action line → do it → read the agent's verify result → judge the human-verify line → confirm or flag → next.
+Execution is [`/user-uat`](../user-uat/SKILL.md)'s whole job — this skill owns refinement only, and keeps zero execution procedure of its own. After producing the Step 5 output, hand the refined script off:
 
-For each step:
+1. **What gets handed off:** the refined UAT from Step 5's fenced block. Invoke `/user-uat` via the Skill tool on it — bare (user-uat's default source is the UAT block just produced in this conversation), or as `path#anchor` when `--apply` already wrote it back to the source doc.
+2. **Flag pass-through** (map only flags both skills actually declare; invent none):
+   - `--exec --dry-run` → `/user-uat --dry-run` (user-uat classifies + prints what WOULD run; nothing executes).
+   - Refined script contains `Verify (visual — vision-judge)` blocks → add `--ui`, so those steps are vision-judged via `/judge-ui` instead of escalated.
+   - `--deep` and `--yes-side-effects` are user-uat flags with no review-uat equivalent — never pass them implicitly; user-uat's own defaults stay in force (see [`/user-uat`](../user-uat/SKILL.md)). An operator who wants them invokes `/user-uat` directly.
+3. **What comes back:** user-uat's terse per-step report (`step → AUTO-PASS / AUTO-FAIL / ESCALATED → one-line evidence`) plus its "Needs you" section. Relay it verbatim — do not re-judge, re-run, or summarize away the evidence.
 
-1. **Run the Setup (agent) block.** Execute the listed commands. If a command fails (non-zero exit, expected file missing, etc.), STOP and report — don't continue to action. Surface stdout/stderr inline, truncated sensibly.
-2. **Print the Action (human) block** verbatim and pause. Wait for the user to confirm they did it (e.g., "done", "ok", "click happened").
-3. **Run the Verify (agent) block.** Execute each check, surface result inline as a checklist (✓ / ✗ with the actual observed value). Don't editorialize — show the data.
-4. **Print the Verify (human) block** and pause for the user's pass/fail call. If there is no Verify (human) block, auto-pass and continue.
-5. **On any failure** (agent verify fails, or human reports fail): stop the loop, print which step failed, and ask whether to retry (re-run from Setup), skip (continue with failure noted), or abort.
-
-`--exec --dry-run`: run Setup commands as `echo` of what would run, skip Action prompts, print Verify commands without executing. Useful for eyeballing the plan before firing real commands.
-
-Constraints in `--exec` mode:
-
-- **Do not run destructive commands without an explicit ack from the user** (anything that wipes data, drops tables, deletes files outside `.staging/`). The refined UAT may include such commands in Setup; pause and ask before each one.
-- **Long-running commands** (start backend, start frontend) should run in the background and the agent should poll a readiness probe (curl `/api/health`, etc.) before continuing.
-- **Capture artifacts** (screenshots, log tails, DB dumps) as they're produced and reference them in the chat output so the human can scroll back.
+The execution procedure itself — tier partition, side-effect gating, mechanical auto-judging, stop-on-FAIL, escalation format — is owned by `/user-uat`; look there, not here.
 
 ### Step 6 — Clarifying-questions loop
 
@@ -234,7 +236,7 @@ These are the patterns that recur. Treat them as a checklist when scanning a dra
 
 ## What NOT to do
 
-- **Do not run the UAT unless `--exec` was passed.** Default is refinement only. With `--exec`, run the agent-side blocks (Setup + Verify (agent)) live and pause for the human between steps; never run human-action steps for them.
+- **Do not run the UAT yourself — ever.** Default is refinement only. With `--exec`, execution happens by delegating the refined script to `/user-uat` (Step 5.5); this skill never executes Setup/Verify blocks inline and never runs human-action steps for the operator.
 - **Do not write a UAT from scratch.** Refuse and point at the relevant `--ui` test conventions or existing M-steps for patterns. Exception: when the "draft" is a set of scattered references inside other steps' status notes, gathering those into one block is consolidation, not invention — but label the output as "drafted + refined from scattered status notes" rather than pretending it was pure refinement.
 - **Do not modify the source plan doc** unless the user passed `--apply`. Default is propose-in-chat only.
 - **Do not invent pass criteria.** If the spec doesn't define what "good" looks like, that's a clarifying question for the user — not a guess.
@@ -246,6 +248,7 @@ These are the patterns that recur. Treat them as a checklist when scanning a dra
 
 ## Interaction with other skills
 
+- **`/user-uat` + `/judge-ui`** — the executors for what this skill writes: review-uat REFINES, user-uat EXECUTES, and `--exec` is refine-then-delegate (Step 5.5 invokes `/user-uat` on the refined script via the Skill tool). `review-uat` *emits* the `Verify (visual — vision-judge)` blocks; `/user-uat --ui` *runs* them via the `/judge-ui` engine (drives the screen, vision-judges it, cross-checks a read-back), reserving `Verify (human)` for motion / audio / feel. Refine here → execute there.
 - **`/plan-wrap`** — same family (self-sufficiency check), but for plans, not UATs. Use both: plan-wrap on the plan, review-uat on its M-steps.
 - **`/user-draft`** — overlapping ambiguity-hunting discipline; the heuristics table here borrows from user-draft's "weak verbs" finding.
 - **`/plan-review`** — the build-step counterpart. plan-review covers what gets built; review-uat covers what humans verify after build.
@@ -261,4 +264,3 @@ This is v1. Likely additions as the skill matures:
 - A library of project-specific "what does '<term>' actually mean" definitions, sourced from operator runbooks (e.g., toybox's "wipe" → recovery-table row 1).
 - Auto-generated agent-driven setup scripts for the common UAT prereqs (PIN reset, breaker reset, fresh DB).
 - Coverage-gap detection by cross-referencing the spec's "Notable" lines against the UAT step list.
-- A `--execute` mode that runs the agent-doable Setup blocks and pauses for human action only.

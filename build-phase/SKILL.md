@@ -6,6 +6,8 @@ user-invocable: true
 
 # Build Phase
 
+> **Judging doctrine:** the verifier/gate invariants behind this skill's quality gates and halt contract (mechanical checks gate first, deterministic gate verdicts) live in [`_shared/judge-core.md`](../_shared/judge-core.md) §2/§5 — this skill instantiates the executable-verifier archetype between steps.
+
 Thin orchestrator that reads step definitions from a plan document and runs
 `/build-step` for each one in sequence. Does not classify steps or decide flags --
 those are declared in the plan. Posts comprehensive progress updates to GitHub
@@ -325,7 +327,7 @@ Each H3 item is one deferred step. Sub-fields appear in FIXED order: `Source ste
 
 **Final-report integration.** After the existing Step 4 final-report block (with `UI-MISSING notes:`, `PARALLELIZABLE notes:`, `Auto-split notes:`, `Quality gates:`, etc.), add a "Manual UAT to run after build-phase" sub-block. If the phase had any deferred steps, list each `M<N>:` entry there (name, issue, command count, check count). If none, omit the sub-block entirely.
 
-**Final-line phrasing per [`feedback_name_manual_verification_handoff`](~/.claude/projects/<project>/memory/feedback_name_manual_verification_handoff.md):** when this phase run produces at least one newly-added deferred-UAT item (an `M<N>` not already in plan.md before this run — the idempotency match-on-Issue check decides this), the phase-end final report's last line MUST name that newly-added item explicitly. Example: if this run adds M5 and M6, the final line reads `Please run M5 next.` If plan.md already contained M1–M4 from prior runs and this run adds no new items (all candidate items match an existing `Source step Issue:` and are skipped per idempotency), the final line is the existing `Next: run /repo-update to commit, update docs, and push.` — no Manual UAT cue. The rule is "first NEWLY-ADDED item from this run", not "first item in plan.md"; this matters because the operator likely already ran M1–M4 from prior phase invocations and doesn't need to be re-cued to them.
+**Final-line phrasing per workspace memory `feedback_name_manual_verification_handoff`:** when this phase run produces at least one newly-added deferred-UAT item (an `M<N>` not already in plan.md before this run — the idempotency match-on-Issue check decides this), the phase-end final report's last line MUST name that newly-added item explicitly. Example: if this run adds M5 and M6, the final line reads `Please run M5 next.` If plan.md already contained M1–M4 from prior runs and this run adds no new items (all candidate items match an existing `Source step Issue:` and are skipped per idempotency), the final line is the existing `Next: run /repo-update to commit, update docs, and push.` — no Manual UAT cue. The rule is "first NEWLY-ADDED item from this run", not "first item in plan.md"; this matters because the operator likely already ran M1–M4 from prior phase invocations and doesn't need to be re-cued to them.
 
 #### Operator step handling
 
@@ -505,12 +507,36 @@ The `[--acceptance ...]` is optional and advisory: `/build-step` (Step 5 of this
 
 #### 2c. Capture result
 
-After `/build-step` completes, capture:
-- Verdict (PASS / BLOCKED)
+**Keep the orchestrator window slim** (per `dev/.claude/rules/subagent-economy.md`): `/build-step` returns a terse report and writes detail to its `.build-step/` files. Capture only the verdict + counts (below); read the `.build-step/*` detail files ONLY when a step BLOCKs and you need findings. Do not re-`Read` `plan.md`/`current.md` you've already read this run, and do not paste full diffs or sub-agent reports into the window — anything that lands here stays resident for the rest of the phase (the dominant token cost).
+
+**Primary capture — read the verdict sidecar.** After `/build-step` completes, read its
+machine-readable verdict at `<worktree_path>/.build-step/verdict.json` (the worktree root the step
+used, convention `../worktree_<BRANCH>`) and apply the consume rule **canonically specified and
+tested in `_shared/build_step_verdict.py::classify_verdict`**. That rule is DEFAULT-DENY /
+FAIL-CLOSED:
+
+- **ADVANCE** (treat as PASS, proceed to the next step) **only** when `result ∈ {PASS,
+  DEFERRED-TO-UAT}` **and** `halt` is `null`.
+- **BLOCKED** for everything else — `result == NEEDS-WORK`, any non-null `halt`
+  (`POST_MERGE_HALT` / `SHIP_GATE_HALT`, which surface to the operator and do NOT trigger
+  developer iteration), an unknown/missing `result`, an unrecognized halt sentinel, or a file that
+  is **missing, unreadable, or malformed JSON** (fail closed — never ADVANCE on ambiguity).
+
+Do not re-implement this branching by hand — the two-string `"ADVANCE"` / `"BLOCKED"` outcome is
+exactly what `classify_verdict(verdict_path)` returns; treat that module as the source of truth so
+this prose and the test never drift.
+
+**Fallback (older build-step with no sidecar).** If `verdict.json` is absent (a build-step
+predating this contract), fall back to parsing the prose return for its terminal PASS / NEEDS WORK
+string — and if that prose is ambiguous or unparseable, treat it as **fail-closed NEEDS-WORK
+(BLOCKED)**, never an implicit PASS.
+
+After classifying, capture for the issue comment + checkpoint:
+- Verdict (PASS / BLOCKED) — the consumed `ADVANCE`→PASS / `BLOCKED`→BLOCKED result above
 - Iteration count (e.g., "iteration 2/3")
 - Files changed
 - Test results (count, pass/fail)
-- If BLOCKED: remaining findings
+- If BLOCKED: remaining findings (and `summary` / `halt` from the sidecar when present)
 - If PASS after iteration > 1: what changed between iterations
 
 #### 2d. Post result comment to GitHub issue
@@ -582,6 +608,11 @@ OVERLAP=$(comm -12 <(echo "$NEW_COMMIT_FILES" | sort -u) <(echo "$STEP_FILES" | 
 - **New commits exist but OVERLAP empty → informational note only, continue.** Emit a one-line note in the result comment ("Note: N new commits landed on `origin` during this step but touched no files in this step's scope — no halt.") and proceed to the PASS/BLOCKED ship comment below per plan §8 risk-table line 228.
 
 - **No new commits → silent, continue to ship comment.**
+
+The `**Verdict:** PASS/BLOCKED` line in both issue-comment templates below is **fed directly from
+the result consumed in §2c** (`ADVANCE` → `PASS`, `BLOCKED` → `BLOCKED`) — it is not a separately
+judged value. When `verdict.json` supplied a non-null `halt` or a `summary`, surface that text in
+the BLOCKED comment's findings line so the operator sees the halt class.
 
 **On PASS:**
 

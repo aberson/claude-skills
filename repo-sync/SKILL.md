@@ -410,7 +410,7 @@ batch with `&&` — one failure must not break the chain.
 All `gh issue create/edit` calls in this skill MUST deliver bodies via `--body-file <path>`, never inline `--body "$(cat <<EOF ... EOF)"`. The inline heredoc form silently truncates or parser-tangles bodies that contain nested quote levels (code spans, quoted text, tables) — see `dev/.claude/rules/windows-shell.md` § gh / jq.
 
 Use a Windows-safe temp path:
-- Bash: `$LOCALAPPDATA/Temp/` (e.g. `C:/Users/<user>/AppData/Local/Temp/`)
+- Bash: `$LOCALAPPDATA/Temp/` (the Windows per-user temp dir, not `/tmp`)
 - PowerShell: `$env:TEMP`
 
 POSIX `/tmp/` is invisible to `gh.exe` on Windows (different temp roots).

@@ -371,6 +371,77 @@ or (b) add the missing runtime fields beneath the existing `**Flags:**` line, ci
 - **Done when:** the changed behavior is observed in the live environment's own evidence (journal excerpt, service log, scheduler run history) — not inferred from tests.
 ```
 
+### 27. Stakes-aware review routing — high-stakes step declares plain `--reviewers code` (Significant Gap)
+
+**Check:** For every `/build-phase`-compatible step whose `**Flags:**` line declares plain
+`--reviewers code`, read the step's **blast surface** — the `**Files:**`, `**Produces:**`, and
+`**Problem:**` text — against the high-stakes trigger classes per `review-deep` SKILL.md's
+header paragraph (`.claude/skills/review-deep/SKILL.md` — the ONE owner of that trigger list;
+CITE it, never restate or enumerate it here, per `.claude/rules/knowledge-placement.md`'s
+one-owner rule). Read the owner paragraph at review time and match against it. The empirical
+incident evidence behind those classes lives in `.claude/rules/code-quality.md`. If the blast
+surface matches, flag the step: the gauntlet profile is mis-tiered for a diff where a silent
+miss is expensive.
+
+**Route, don't blanket:** review-deep is the expensive instrument. This check emits per-step
+routing findings ONLY for matching steps. A plan with zero high-stakes steps produces zero §27
+findings and is left byte-untouched by this check (no Flags line modified, no note emitted).
+
+**Idempotent no-op on already-routed steps:** a step already declaring `--reviewers deep` is
+NEVER re-flagged and never rewritten, regardless of how high-stakes its blast surface is — the
+routing is already correct. Re-running the check on a previously autofixed plan therefore
+emits nothing for those steps (complements the generic `<!-- autofix-applied -->` marker
+skip in Re-run behavior below).
+
+**Why:** Nothing else routes a high-stakes step to `/review-deep` — the choice otherwise lives
+in plan-author memory at Flags-authoring time, and the incident classes in
+`.claude/rules/code-quality.md` each shipped past standard 4-arm review. Source:
+`docs/seeds/seed_stakes-aware-review-routing.md`.
+
+**Severity:** Significant Gap — same class as §24 (a mis-tiered high-stakes step is a
+quality-gate defect, not cosmetic; the operator may still knowingly accept gauntlet coverage
+for a borderline step in `--no-autofix` mode).
+
+**Fix template (auto-applied in `--autofix` mode):** token-level substitution on the step's
+Flags line — replace ONLY the `--reviewers code` token pair with `--reviewers deep`; every
+co-located flag on the line survives verbatim. E.g.:
+
+```markdown
+- **Flags:** --reviewers code --max-iter 2
+```
+
+becomes
+
+```markdown
+- **Flags:** --reviewers deep --max-iter 2
+```
+
+Never wholesale-replace the line — dropping a co-located flag (`--max-iter`, `--isolation`,
+`--ui`, …) silently changes the step's build behavior.
+
+`--reviewers deep` is `/build-step`'s review-deep lane: it dispatches `/review-deep` (its code
+lenses + deterministic aggregation + JSON audit sidecar) INSTEAD OF the gauntlet's four arms.
+The lane is code-lens-only, so the rewrite adds no `**Start-cmd:**`/`**URL:**` requirement and
+never triggers §24 on the rewritten line.
+
+**Fable-escalation note (annotate, NEVER auto-set):** each §27 finding carries a one-line
+operator note: "high-stakes substrate/schema diff — consider `/review-deep --model-override
+bugs=fable` per CLAUDE.md's model paragraph; pending #289". The note is advisory only — this
+check NEVER writes a model tier or `--model-override` flag into the plan. Model tiering stays
+operator policy (CLAUDE.md's model paragraph is the owner).
+
+**Example finding:**
+
+> Step 3 (`**Files:** src/app/models.py, alembic/versions/`) migrates the suggestions table's
+> primary key but declares plain `--reviewers code`. Its blast surface matches the high-stakes
+> classes per `review-deep` SKILL.md's header (the trigger-list owner). Escalate to
+> `--reviewers deep`. Note: high-stakes substrate/schema diff — consider
+> `/review-deep --model-override bugs=fable` per CLAUDE.md's model paragraph (pending #289).
+
+**Pipeline note:** `/build-phase` forwards `Flags:` verbatim and `/plan-expedite` chains this
+skill, so the rewrite reaches `/build-step`'s dispatch with zero changes to either — the
+routing lands entirely in the plan file plus `/build-step`'s `deep` lane.
+
 ---
 
 ## Output format
@@ -438,6 +509,7 @@ followed by "None."
 | Missing Files list | Greps the project tree for producer files matching the step's `**Files:**` declared paths; fills missing `**Files:**` from grep results. | (existing Files check) |
 | Default Type: code | Adds `**Type:** code` to any step lacking a Type: field. | (existing Type check) |
 | Placeholder Condition: | Adds `**Condition:** <shell command returning exit 0 to run, non-zero to skip>` placeholder to any `Type: conditional` step missing the field. | §23 (added in Step 2 of BPA plan) |
+| Stakes-aware reviewer escalation | Token-level substitution on the `**Flags:**` line of a step whose blast surface matches the high-stakes trigger classes per `review-deep` SKILL.md's header: `--reviewers code` → `--reviewers deep`, all co-located flags preserved verbatim. Emits nothing (and touches nothing) on a plan with zero high-stakes steps; steps already declaring `--reviewers deep` are a no-op. The Fable-escalation note stays a surfaced annotation — never written into the plan. | §27 |
 
 **Present-but-vague Done-when (surfaced Significant Gap — NOT autofixed).** Extends the missing-Done-when check above: a `Done when:` that is present but non-falsifiable / vague (e.g. `"it works"`, `"done"`) or not mapped to the step's `Problem:` is a **Significant Gap** surfaced for operator judgment — never auto-rewritten (the wording is theirs). EXEMPT the deferred sentinels in `../../references/step-authoring.md` §3 (they mean "not yet filled in", not "vague") — those stay silent in both modes.
 
@@ -516,17 +588,17 @@ When invoked, read the plan file (ask the user for the path if not obvious), the
 which mode applies:
 
 - **Greenfield plan** — the file is `plan.md` or describes a full project from scratch.
-  Apply sections 1–16 AND sections 22–25. Skip sections 17–21, EXCEPT §19's conventions bullet and §21's step-sizing bullet (both apply in greenfield — see `../../references/step-authoring.md` §1).
+  Apply sections 1–16 AND sections 22–27. Skip sections 17–21, EXCEPT §19's conventions bullet and §21's step-sizing bullet (both apply in greenfield — see `../../references/step-authoring.md` §1).
 - **Feature plan** — the file is in `documentation/*-plan.md` or describes a scoped change
   to an existing project. Apply sections 1–16 (skipping those irrelevant to the feature's
-  scope) AND sections 17–25. For sections 17–21, actively read the codebase to validate
+  scope) AND sections 17–27. For sections 17–21, actively read the codebase to validate
   the plan's claims.
 
 **Pre-review detection (repo-sync state):** Before applying any mode-specific checks, scan the plan for non-blank `**Issue:** #<number>` fields per the "Repo-sync-already-ran detection" clause in the Output format section above. If any are present, emit the `[!]` warning as the first line of output; the review continues normally.
 
 **Mode declaration:** After (or before, if no warning fires) the repo-sync detection, the skill emits the mode declaration line per the "Mode declaration" clause in the Output format section. This makes the mode selection observable — silent wrong-mode selection is no longer possible.
 
-Section 22 (operator/code step-shape integrity), Section 23 (conditional-step Condition predicate), Section 24 (reviewer flag matches step shape), and Section 25 (plan format readiness for /build-phase) run on **every** plan that contains
+Section 22 (operator/code step-shape integrity), Section 23 (conditional-step Condition predicate), Section 24 (reviewer flag matches step shape), Section 25 (plan format readiness for /build-phase), Section 26 (substrate-smoke step for deployment seams), and Section 27 (stakes-aware review routing) run on **every** plan that contains
 `/build-phase`-compatible build steps — both modes apply them.
 
 Work through the checklist sections that are relevant to the plan's architecture. Skip
@@ -541,6 +613,6 @@ is to leave the plan in a better state after every review — not just list prob
 
 ---
 
-## dev-observatory hook (additive; see [`.claude/rules/descriptor-contract.md`](../../rules/descriptor-contract.md))
+## dev-observatory hook (additive; see `.claude/rules/descriptor-contract.md`)
 
-**Control-plane checks (additive).** Confirm: (1) the plan lives at a **discoverable canonical path** — `plan.md` or `master_plan.md` in the project root or `plans/`/`docs/`/`documentation/` (per [`.claude/rules/descriptor-contract.md`](../../rules/descriptor-contract.md) §4) so the control-plane observer + tooling can find it; (2) it carries a **scrapable goal** (a `## 1. What This Is` section or labeled objective); (3) for a built-vs-planned signal, it has **scrapable step/phase units** inline (`### Step N:` with `**Status:**` markers, or `## Phase` headings) — a pure pointer/index plan that only links to sub-plans yields a goal but no progress ratio (the observer shows `gap = -`); (4) declared ports don't collide with the registry (`observatory ports`). All Nice-to-have findings, not blockers.
+**Control-plane checks (additive).** Confirm: (1) the plan lives at a **discoverable canonical path** — `plan.md` or `master_plan.md` in the project root or `plans/`/`docs/`/`documentation/` (per `.claude/rules/descriptor-contract.md` §4) so the control-plane observer + tooling can find it; (2) it carries a **scrapable goal** (a `## 1. What This Is` section or labeled objective); (3) for a built-vs-planned signal, it has **scrapable step/phase units** inline (`### Step N:` with `**Status:**` markers, or `## Phase` headings) — a pure pointer/index plan that only links to sub-plans yields a goal but no progress ratio (the observer shows `gap = -`); (4) declared ports don't collide with the registry (`observatory ports`). All Nice-to-have findings, not blockers.

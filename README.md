@@ -25,12 +25,15 @@ Each skill name links to its `SKILL.md`.
 
 | Area | Skills |
 |------|--------|
-| **User & session** | [user-fix](user-fix/SKILL.md) · [user-brainstorm](user-brainstorm/SKILL.md) · [user-draft](user-draft/SKILL.md) · [user-learn](user-learn/SKILL.md) · [user-orient](user-orient/SKILL.md) · [user-pm](user-pm/SKILL.md) · [user-recap](user-recap/SKILL.md) · [user-shakedown](user-shakedown/SKILL.md) · [user-uat](user-uat/SKILL.md) · [user-walkthrough](user-walkthrough/SKILL.md) · [session-wrap](session-wrap/SKILL.md) · [task-handoff](task-handoff/SKILL.md) · [research-prospect](research-prospect/SKILL.md) |
+| **User & session** | [user-brainstorm](user-brainstorm/SKILL.md) · [user-debug](user-debug/SKILL.md) · [user-draft](user-draft/SKILL.md) · [user-gateway](user-gateway/SKILL.md) · [user-learn](user-learn/SKILL.md) · [user-orient](user-orient/SKILL.md) · [user-pm](user-pm/SKILL.md) · [user-shakedown](user-shakedown/SKILL.md) · [user-uat](user-uat/SKILL.md) · [user-walkthrough](user-walkthrough/SKILL.md) · [user-wrap](user-wrap/SKILL.md) · [session-wrap](session-wrap/SKILL.md) · [task-handoff](task-handoff/SKILL.md) · [research-prospect](research-prospect/SKILL.md) |
 | **Skill tooling** | [skill-eval-setup](skill-eval-setup/SKILL.md) · [skill-evolve](skill-evolve/SKILL.md) · [skill-iterate](skill-iterate/SKILL.md) |
 | **Maintenance & hygiene** | [test-prune](test-prune/SKILL.md) · [lesson-harvest](lesson-harvest/SKILL.md) · [memory-distill](memory-distill/SKILL.md) · [context-slim](context-slim/SKILL.md) |
 | **Reference** | [claude-oauth-auth](claude-oauth-auth/SKILL.md) |
 
-`_shared/` holds resources referenced by several skills.
+`_shared/` holds resources referenced by several skills — the judging doctrine
+([judge-core.md](_shared/judge-core.md)), the skill routing web
+([skill-pipeline.md](_shared/skill-pipeline.md)), the intake-ledger contract
+([intake-engine.md](_shared/intake-engine.md)), and the skill-scoring harness.
 
 The design idea across all of these: treat agent work as a **pipeline with quality gates** — plan,
 build one step at a time, review with independent adversarial passes, and only then ship. Several
@@ -49,6 +52,10 @@ Two notes on reading the maps:
 - Pipeline skills are **autonomous by default**: no mid-run "(y/n)?" prompts. Conversational skills
   (`plan-init`, `plan-feature`, `plan-merge`, `plan-trim`, the `user-*` ideation skills) stop and ask
   by design.
+- The full **routing web** — which rail an operator fragment lands on (bug / do / plan /
+  investigate / verify / trim / decide / draft) and the sanctioned re-route edges between rails —
+  lives in [_shared/skill-pipeline.md](_shared/skill-pipeline.md). `/user-gateway` consults it per
+  fragment; no skill hardcodes its own routing table.
 
 ### The core pipeline
 
@@ -92,11 +99,12 @@ Ordering matters in two places:
 | Brand-new project, no code yet | `/plan-init` — §1 |
 | Add a feature to an existing project | `/plan-feature` — §2 |
 | One well-scoped change, no plan needed | `/build-step` — §3 |
-| Stuck in a loop on a bug with the agent | `/user-fix` — §4 |
+| Stuck in a loop on a bug with the agent | `/user-debug` — §4 |
 | Review a diff or PR | `/review-gauntlet` or `/review-deep` — §5 |
 | A feature just built needs human acceptance | §6 |
 | Several phases ready; run them overnight | `/build-queue` — §7 |
-| "Where were we?" / context filling up | §8 |
+| "Where were we?" / sitting back down at an open window | §8 |
+| A head full of half-formed observations about a topic | `/user-gateway` — §8 |
 | Plan drifted, or survey what to do next | §9 |
 | Improve the skills or the workspace's memory | §10 |
 | Explore an idea or learn a topic | §11 |
@@ -176,10 +184,10 @@ One skill, three independent knobs:
 </details>
 
 <details>
-<summary><strong>4. Getting unstuck on a bug (user-fix)</strong></summary>
+<summary><strong>4. Getting unstuck on a bug (user-debug)</strong></summary>
 
 ```
-/user-fix --symptom '<exact error / log line / misbehavior>'
+/user-debug --symptom '<exact error / log line / misbehavior>'
 ```
 
 - Reach for it when a bug keeps **circling between you and the agent** — command-paste back-and-forth
@@ -189,6 +197,9 @@ One skill, three independent knobs:
 - It's operator-invoked when *you're* stuck, not a plan-driven step — which is why it lives with the
   `user-*` skills rather than the `build-*` pipeline. (It still writes real code via `build-step`.)
 - `--triage investigate-only` stops after the diagnosis block — root cause without the fix.
+- If investigation concludes the "bug" is really designed, multi-step work, it re-routes to a
+  `/plan-feature` seed instead of forcing a fix (the routing web's bug→plan edge — see
+  [_shared/skill-pipeline.md](_shared/skill-pipeline.md)).
 
 </details>
 
@@ -198,12 +209,18 @@ One skill, three independent knobs:
 Both review skills also run standalone, outside `build-step`:
 
 ```
-/review-gauntlet                     # routine diffs: 4 parallel lenses (correctness, bugs, tests, style)
-/review-deep --prompt '<intent>' --diff <PR# | git diff | paste>    # high-stakes: 5 lenses + JSON audit trail
+/review-gauntlet <prompt> <diff>     # routine diffs: lean profile over review-deep's engine (5 code lenses, terse verdict)
+/review-deep --prompt '<intent>' --diff <PR# | git diff | paste>    # high-stakes: 6 lenses + JSON audit trail
 ```
 
-- Reach for `review-deep` on substrate/schema/key-shape changes and producer→consumer chains;
+- `review-gauntlet` is a **thin profile over review-deep's engine** — the same code lenses
+  (correctness, bugs, security, test quality, style) and deterministic aggregation, but
+  positional args, a terse PASS / NEEDS-WORK verdict, and no JSON sidecar. Reach for
+  `review-deep` on substrate/schema/key-shape changes and producer→consumer chains;
   `--plan-step <plan>:<step>` adds a plan-conformance lens.
+- Inside the pipeline, `build-step --reviewers deep` dispatches review-deep directly for
+  high-stakes steps, and `plan-review` (§27) routes those steps at plan time by rewriting the
+  step's Flags line from `--reviewers code` to `--reviewers deep`.
 - `review-proof` is the cross-cutting discipline both lean on: findings must cite `file:line` or
   be dropped. Invoke it directly for "are you sure?" moments — audits, debugging, architecture
   claims.
@@ -233,6 +250,8 @@ After a build, human-facing verification splits by whether a test script exists.
   remainder to shakedown, armed under a mechanically checkable goal:
   `/goal "shakedown ledger for <slug> has zero open items"`.
 - Anything needing human judgment is escalated with evidence, never guessed.
+- `review-uat --exec` is refine-then-delegate: it hands the refined script to `/user-uat` for
+  execution rather than running anything itself.
 - Finish with `/repo-update` to commit the fixes and file the logged issues.
 
 </details>
@@ -255,20 +274,53 @@ After a build, human-facing verification splits by whether a test script exists.
 <details>
 <summary><strong>8. Session &amp; context management</strong></summary>
 
+The session doctrine is a **triage front door**: one skill owns the decision; everything else
+is a library it calls or a mode it delegates to.
+
 ```
-/user-recap                         # ~150-word thread refresh: problem / tried / still to do
-/user-orient                        # full re-orientation: verified vs not, asides, recommendation (read-only)
-/user-draft <rough thoughts>        # polish a rough idea into a reusable prompt or a /goal condition
-/task-handoff --loop                # durable checkpoint mid-task (~5s)
-/task-handoff --next-task <label>   # save + push at a task boundary, keep working
+/session-wrap                       # the front door: triages (context, task boundary, git, armed /goal), announces ONE route, acts
+/session-wrap --advise              # read-only verdict: KEEP GOING / RECYCLE WINDOW / WRAP & CLOSE / SAFE TO CLOSE + loss report
+/user-wrap                          # the return moment ("sitting back down — keep going or close?"): orient, delegate to --advise, act
+/task-handoff --loop                # checkpoint library: durable current.md write mid-task (~5s)
+/task-handoff --next-task <label>   # durable task-boundary save, keep working
 /task-handoff                       # bare = --resume: orientation block from the last checkpoint
-/session-wrap                       # true session end: memory + docs + clean tree + next-window prompt
+/user-orient                        # session-axis re-orientation: verified vs not, asides, recommendation (read-only)
+/user-orient --quick                # ~150-word thread refresh: problem / tried / still to do (no lookups)
+/user-gateway <topic> <vent>        # pre-work intake: convert a brain-dump into routed, ledger-backed work
+/user-draft <rough thoughts>        # polish a rough idea into a reusable prompt or a /goal condition
 /context-slim [--apply]             # audit auto-loaded context files; prune per-turn token cost
 ```
 
-- The doctrine is *native context management first*: auto-compaction and goal-arming handle most
-  sessions, so the default is to keep working in one window. `task-handoff` covers in-window
-  transitions; `session-wrap` is only for real endings (`--end` delegates to it).
+- **`session-wrap` is the one triage owner.** Invoked bare at any transition moment, it scores
+  mechanical signals (context utilization, task-boundary state from `current.md`, git state,
+  armed `/goal`), announces one route, then acts: `continue` (checkpoint + one line),
+  `clear-next` (durable state → rendered handoff prompt → git verb → emit `/clear`), or
+  `end-window` (full wrap: memory/docs passes + a Pick-up-here block). `--advise` is the
+  read-only variant — a verdict banner + two-line loss report, never acts.
+- **`user-wrap` serves the return moment** — sitting back down after lunch or overnight.
+  Despite the name, the most common verdict is KEEP GOING. It owns zero triage logic of its
+  own: it orients from `current.md` + git, delegates the verdict to `session-wrap --advise`,
+  re-presents the banner + loss report front and center, then acts per verdict.
+- **`task-handoff` is the checkpoint library** orchestrators call (`build-phase`, `build-step`,
+  `plan-expedite`, `user-draft`); operators usually want `/session-wrap`.
+- **`user-gateway` is the pre-work intake valve**: one ledger row per voiced fragment, routed
+  by consulting the routing web, each with a ready-to-paste seed — it converts what you said
+  and never proposes work of its own.
+
+```mermaid
+flowchart LR
+    V["operator vent"] --> G["user-gateway<br>(intake ledger)"]
+    G --> W{"routing web<br>(_shared/skill-pipeline.md)"}
+    W --> B["bug → user-debug"]
+    W --> P["plan → plan-feature → build rail"]
+    W --> VR["verify → review-uat / user-uat /<br>walkthrough / shakedown"]
+    W --> D["draft → user-draft → /goal"]
+    W --> K["decide → parked for the operator"]
+```
+
+- The underlying doctrine is *native context management first*: auto-compaction and
+  goal-arming handle most sessions, so the default is to keep working in one window and reach
+  for the front door only at genuine transition moments.
 - `user-draft` is the authoring helper — it turns rough thoughts into a clean prompt or a
   checkable `/goal` string and checkpoints via `task-handoff --loop` so a window pivot loses nothing.
 
@@ -381,6 +433,13 @@ Then invoke a skill in Claude Code, e.g. `/plan-review` or `/build-step`.
 - Replace placeholders (`<workspace>`, `<project>`, `<your-org>`) with your own values.
 - Skills that reference a "control plane" or a memory index assume conventions from my workspace —
   read the `SKILL.md` and adjust, or skip those skills.
+- **The exclusions are deliberate.** A few workspace skills are intentionally not published
+  here: the `goblin-*` pair (a personal improvement-atom store), the `tier-*` pair (local-model
+  offload scanners tied to a local router), `judge-ui` (needs per-project browser adapters),
+  and `user-lavishify` (a workspace-specific rendering stack) — plus a handful of workspace
+  reference files (`shakedown-engine.md`, `task-state-schema.md`, the `docs/investigations/`
+  corpus). Published skills may mention them; treat those mentions as adaptation points, not
+  missing files.
 - No secrets or credentials are included.
 
 ## License

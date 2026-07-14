@@ -167,7 +167,7 @@ grade itself. A sub-agent cannot spawn its own producer/grader sub-agents (agent
 forced to self-grade. Moving the fan-out into a workflow flattens it — every agent is a sibling of the script.
 See § Execution model.
 
-**Optional local-grader offload (switchboard, INERT BY DEFAULT).** The per-scenario GRADER fan-out is the one role this skill may route to a local model (offload-scan task_class `skill-evolve-grader`; Switchboard Decision 9 — a cheap parallel scoring array). It is **off unless switchboard offload is enabled for this slice**. When a grader sub-task is about to score a rendered output, first call the switchboard judge entrypoint with the grading prompt:
+**Optional local-grader offload (switchboard, INERT BY DEFAULT).** The per-scenario GRADER fan-out is the one role this skill may route to a local model (tier-offload task_class `skill-evolve-grader`; Switchboard Decision 9 — a cheap parallel scoring array). It is **off unless switchboard offload is enabled for this slice**. When a grader sub-task is about to score a rendered output, first call the switchboard judge entrypoint with the grading prompt:
 
 ```bash
 python -m switchboard judge --site skill-evolve-grader --prompt-file <grading-prompt-file>
@@ -178,7 +178,7 @@ It prints one JSON object and always exits 0. On a **verdict** (`{"verdict": ...
 Create a temp work dir for this run, then assemble the workflow `args`:
 
 - `shared_dir` — absolute path to `.claude/skills/_shared`.
-- `work_dir` — a fresh temp dir, e.g. `C:/Users/<user>/AppData/Local/Temp/skill-evolve-<skill>-<epoch>`. Create it first; agents write mutated copies, renders, verdicts, and payloads here. (Use `AppData/Local/Temp`, not `/tmp` — see `.claude/rules/windows-shell.md`.)
+- `work_dir` — a fresh temp dir, e.g. `$LOCALAPPDATA/Temp/skill-evolve-<skill>-<epoch>` on Windows. Create it first; agents write mutated copies, renders, verdicts, and payloads here. (Use `AppData/Local/Temp`, not `/tmp` — see `.claude/rules/windows-shell.md`.)
 - `evals_dir` — `<skill-folder>/evals` (the UNMUTATED eval suite; every variant is scored against the same assertions, held constant per § Limitations).
 - `trials` — the `--trials` value (default 1). On `--trials N`, each scenario is graded N times and the aggregator collapses by per-(scenario, assertion) majority vote (ties → False).
 - `variants` — one object per parsed `[<id>] <strategy>` line: `{ id, label: id, strategy, base_skill_md_path: <abs path to the skill's real SKILL.md> }`.

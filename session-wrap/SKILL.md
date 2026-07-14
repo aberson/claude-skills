@@ -1,406 +1,545 @@
 ---
 name: session-wrap
-description: Prepare for a clean context window transition. Reviews the current conversation, updates memory and docs if stale, and generates a self-contained copy-paste prompt for the next session. Use when approaching context limits or before ending a productive session.
+description: "The session-transition front door. Bare invocation TRIAGES the session — context utilization, task-boundary state from current.md, git state, armed /goal — announces one route, then ACTS: continue (checkpoint + one line), clear-next (durable state to disk, git verb, emit /clear), or end-window (full wrap, handoff rendered to handoff-prompt.md, Pick-up-here block). Use at any transition moment: task boundary, heavy context, or end of day. /task-handoff is the checkpoint library this skill calls."
 user-invocable: true
 ---
 
-# Context Window Transition Prep
+# session-wrap
 
-**Goal: a clean, up-to-date transition.** The next session should open onto a clean working tree, a remote that matches local, and docs/memory that reflect what just shipped. Uncommitted work and unpushed commits are blockers, not optional cleanup — they leak this session's state into the next session's first ten minutes of orientation.
+One decision-making front door for session transitions. Invoked bare, it TRIAGES the
+session against mechanical signals, announces the chosen route in one line, then ACTS.
+No mid-run (y/n) gates — bare invocation is the safest mode. The single ask-first
+exception is a detected parallel-session anomaly before the git verb; the detection
+pre-flight is the Git-verb router's Step A (section below).
 
-This skill does three things in order:
-1. Reviews what happened in this conversation and the current project state
-2. Updates memory and docs if anything is stale or missing, then **commits and pushes** so the transition lands on a clean tree
-3. Generates a copy-paste ready prompt for the next context window
-
----
-
-## Step 1: Review the conversation
-
-Scan the full conversation and build an internal summary. Do not output this yet — use it
-to drive Steps 2 and 3.
-
-Capture:
-- **Project:** Name and working directory
-- **Accomplished this session:** Concrete things completed (files written, decisions made, reviews done)
-- **Decisions made:** Key choices or direction changes that aren't obvious from the code
-- **Current state:** Phase, step, branch, test counts if known
-- **Next action:** The single most important thing to do next — specific and actionable
-- **Blockers or open questions:** Anything unresolved the next session must know
-- **Files created or significantly changed:** Key paths touched this session
-
-### Friction Review
-
-Scan the session for things that were harder than they should have been. Capture:
-- **Failed commands or retries:** Commands that errored and had to be re-run or adjusted
-- **Wrong assumptions:** Incorrect guesses about file locations, API patterns, build steps, or tool behavior
-- **Missing context:** Information that took multiple steps to find but should have been documented
-- **Clunky workflows:** Multi-step processes that felt manual or fragile
-
-Skip one-off flukes (typos, transient network errors). Do not include retry counts
-(e.g., "took 3 attempts") — describe the pattern, not the episode. Focus on patterns that
-would slow down future sessions. If the session was clean with no friction, note that and
-move on.
-
-Friction items that are actionable should be saved as memory (feedback type) in Step 2 so
-future sessions avoid the same friction.
+Division of labor: `/task-handoff` is the checkpoint *library* this skill calls; the
+`current.md` file contract is owned by
+`.claude/references/task-state-schema.md` (workspace reference, not published in this mirror)
+(cite it, never restate it). Phase-shipping territory (README/plan updates, issue
+closing, push-everything) belongs to `/repo-update` — the git-verb router delegates
+there; this skill never duplicates it.
 
 ---
 
-## Step 2: Check memory and docs
+## Threshold constants (operator-tunable)
 
-### Memory
+Defaults from community threshold doctrine (proactive boundary at ~60% utilization,
+~120k-token quality "dumb zone", 95% auto-compact "too late"). The internal
+degradation floor is unmeasured — these are defaults, not findings; when the floor
+gets measured, one edit here moves them.
 
-Read `~\.claude\projects\<project>\memory\MEMORY.md`.
-**If the first Read returns a partial-load reminder** (`Only part of it was loaded`,
-`truncated`, or similar truncation notice), issue follow-up Read calls with `offset`
-until the full file is covered before claiming the read happened. Partial reads
-silently corrupt the read-then-report discipline below — the prep summary cannot
-honestly say "Read MEMORY.md" if only the first chunk loaded.
+| Constant | Value | Raw-token proxy | Meaning |
+|---|---|---|---|
+| `CONTINUE_MAX_UTIL` | 60% | <=120k tokens | Below this and mid-task -> `continue` |
+| `CLEARNEXT_UTIL` | 60% | >120k tokens | At or near a task boundary -> `clear-next` |
+| `CLEARNEXT_FORCE_UTIL` | 75% | >150k tokens | Take the next boundary aggressively, regardless of task state |
+| (end-window) | — | — | No threshold. Operator intent only ("done", "end of day", explicit `--end`), or no agent-completable next action exists |
 
-In the prep summary, the **Memory checked** bullet MUST follow this literal form
-(read-then-report is non-optional, not stylistic):
-
-  > Read MEMORY.md (X lines fully loaded). Existing entry for <topic-1> was
-  > <current|stale>; existing entry for <topic-2> was <current|stale>; no
-  > existing entry for <topic-3>. Then: <list of updates by name/topic>.
-
-For EVERY MEMORY.md topic touched this session, one explicit
-`Existing entry for <topic> was <current|stale>` (or
-`no existing entry for <topic>`) clause MUST appear BEFORE any sentence that
-describes a change. The Output format template at §Step 3 inherits this
-requirement — the §Output format Memory-checked bullet template is a one-line
-summary of this rule, not a permission to skip it.
-
-**MEMORY.md soft cap: 200 lines / 200 chars per line.** If MEMORY.md exceeds 200
-lines OR any line exceeds 200 chars, the prep summary surfaces an explicit
-`**Maintenance:** MEMORY.md over budget (X lines / Y lines > 200 chars) —
-recommend trimming index entries; detail belongs in topic files.` line. The
-operator decides whether to trim; this skill does NOT auto-edit MEMORY.md content.
-The warning is intentionally always-on while MEMORY.md remains over budget — it
-quiets itself once the operator trims back under the cap.
-
-Compare against what happened in this session. Write new memory entries for anything not
-already captured:
-- Project phase or status changes (e.g., "Phase 4 planning complete, not yet started")
-- New user preferences or workflow feedback discovered this session
-- Newly discovered gotchas or trip-wires not in any plan doc
-- Key decisions that aren't obvious from reading the code or docs
-
-Do not duplicate existing entries. Update stale entries rather than appending.
-Do not write memory for things already captured in plan.md or a phase prompt file.
-
-**Multi-project sessions.** If this session touched files in more than one project
-directory under `dev/` (e.g., both `Alpha4Gate/` and `toybox/` saw code edits),
-check MEMORY.md for entries under EACH project's heading, not just CWD's project.
-The prep summary's Memory line names each touched project's heading individually
-(e.g., "Updated Alpha4Gate entry to note <X>. Updated toybox entry to note <Y>.")
-so the next session sees both projects' status at a glance instead of having to
-re-derive multi-project scope.
-
-### Sync feedback memories with lessons-learned.md
-
-Cross-project lessons live in two places that must stay in sync:
-
-- **Source of truth (long form):** `<workspace>/docs/lessons-learned.md` —
-  version-controlled in the dev/ repo, organized by topic with anchored sections.
-- **Pointer (short form):** `~/.claude/projects/<project>/memory/feedback_*.md` —
-  each `feedback_*.md` is a thin file with frontmatter + a link to the lessons-learned
-  section + a one-line `**Why:**` + a one-line `**How to apply:**`.
-
-Whenever a feedback memory is created, edited, or referenced this session, audit
-both layers:
-
-1. **If you wrote a NEW feedback memory in the step above:**
-   - Add a corresponding section in `dev/docs/lessons-learned.md` under the right
-     topic heading. Use the same `### Title` format as existing sections so the
-     auto-generated anchor (`#title-in-kebab-case`) matches.
-   - Add the section to the doc's table of contents.
-   - Rewrite the `feedback_*.md` to be a thin pointer (frontmatter + link + one-line
-     Why + one-line How to apply). Do NOT leave the long form duplicated in both
-     files.
-   - Add an entry to `MEMORY.md` under the appropriate heading.
-
-2. **If you UPDATED an existing feedback memory (corrected Why, expanded How to
-   apply, etc.):**
-   - Find the matching section in `dev/docs/lessons-learned.md` (follow the link in
-     the pointer file). Apply the same correction there.
-   - If the pointer's `description:` frontmatter changed, update the matching line
-     in `MEMORY.md`.
-
-3. **If you only REFERENCED an existing feedback memory (no edit):** no sync needed.
-
-4. **Drift check** — pick 2-3 feedback pointers touched in recent sessions and
-   verify their lessons-learned section still exists and the pointer's `description:`
-   summary matches the section's content. If you find drift, fix it.
-
-The lessons-learned doc is the canonical long form. Pointer files exist only so
-`MEMORY.md` can stay short and the per-feedback judgment context (Why + How) loads
-into every conversation without pulling in the full long-form doc.
-
-**What to skip:** project-scoped memories (`alpha4gate.md`, `pinchy-*.md`, etc.) do
-NOT sync to `dev/docs/lessons-learned.md` — that doc is for cross-project lessons
-only. Project-specific gotchas belong in the project's own wiki and are managed by
-`/repo-update`, not here.
-
-### Friction catalog staleness check
-
-`<workspace>/docs/friction-catalog.md` is a derived artifact catalogued from
-the `feedback_*.md` memories. It gets stale when new memories are added or existing
-ones are edited.
-
-Cheap check (no regeneration):
-
-1. Get the catalog's mtime: `stat -c %Y <workspace>/docs/friction-catalog.md`
-   (or read the `indexed YYYY-MM-DD` date on line 3).
-2. Find any `feedback_*.md` under
-   `~/.claude/projects/<project>/memory/` with mtime newer than the
-   catalog OR newer than the indexed date.
-3. If any newer memories exist, include one line in the Prep summary:
-   `Friction catalog: STALE (indexed YYYY-MM-DD; N newer memories). Consider regenerating.`
-   If catalog is current: `Friction catalog: current.` (one line, omit entirely if
-   the catalog file does not exist — it's optional infrastructure).
-
-Do NOT auto-regenerate. The catalog gen is a multi-file read pass (~80 memories) —
-too expensive for every session-wrap. Surface the staleness, let the operator
-decide when to re-run.
-
-### Plan and session docs
-
-Check whether the project has a `plan.md` or equivalent and a session prompt file
-(e.g., `phase4-prompt.md`, `phase3-prompt.md`).
-
-For each, quickly assess:
-- Does it reflect the work done this session?
-- If docs were updated this session (as they were in this conversation), confirm they are current.
-- Note any remaining divergence between files — do not silently leave a stale file.
-
-If a session prompt file is up to date and self-contained, the transition prompt can point
-to it rather than repeating its contents. If it is stale or absent, the transition prompt
-must include the detail inline.
-
-### Git status check
-
-If the working directory is a git repository, **the default outcome is a clean tree pushed to origin.** Surface the state, recommend the commit + push explicitly, and only skip if the user says no.
-
-**Multi-project sessions.** Multi-project signal = the Step 1 `Accomplished this
-session` bullets reference **2 or more distinct project directory names** (e.g.,
-both `Alpha4Gate` and `toybox`, OR a project repo like `toybox` **plus** any
-workspace-root file under `dev/` such as `dev/docs/lessons-learned.md`,
-`dev/CLAUDE.md`, or `dev/.claude/...` — the `dev/` workspace root is itself a
-distinct repo with its own `.git/`, so editing a file there counts as a second
-touched repo). When that signal is present you **MUST**:
-
-1. Repeat the status + ahead/behind checks (§1–§4 below) in EACH affected repo,
-   including the `dev/` workspace root when any workspace-root file was edited.
-2. Render the prep summary's `Git:` bullet as a single line that lists each
-   touched repo's status individually, using ` / ` (space-slash-space) as the
-   per-repo separator. Each segment must name the repo and its own branch +
-   ahead-count + dirty-files state. Example:
-
-     > Git: toybox `master` clean, up to date with remote / dev `master` 2 unpushed, 1 dirty file.
-
-   A single prose paragraph that mentions one repo's status and only references
-   another repo as a push target is **non-conforming** — every touched repo gets
-   its own ` / `-delimited segment with its own ahead-count and dirty state.
-3. List each repo's `HEAD @ <short-sha>` on its own line in the transition
-   prompt's `Current state` section (one line per repo, per-repo SHA — not a
-   single combined SHA) so §6's verify check can be run per-repo (extends the
-   single-repo SHA rule from Step 2 of Phase SW).
-
-If the signal is absent (single project, no workspace-root edits), use the
-standard single-repo Git bullet — do not invent a multi-project format.
-
-1. Run `git status` to check for uncommitted changes (staged, unstaged, and untracked files).
-2. Run `git log --oneline -1` and compare against `git log --oneline origin/HEAD -1` to check
-   if the local branch is ahead of the remote.
-
-   **Multi-branch scan procedure.** Branches other than the current one are easy to miss.
-   Scan the conversation for these four verbs to enumerate every branch this session touched:
-   `git checkout <branch>`, `git worktree add ... <branch>`, `git merge <branch>`, `git push origin <branch>`.
-   For each branch that appeared, run:
-
-       git log --oneline origin/<branch>..<branch>
-
-   Any output means that branch is ahead of remote — surface it under **Git** and recommend
-   pushing. A clean output (no lines printed) means the branch is at or behind origin; report
-   it as up-to-date.
-
-   Worktree branches deserve extra care: `git worktree remove` un-registers a worktree but
-   may leave its branch with unmerged commits if the worktree shipped a code step. See
-   [`dev/.claude/rules/worktree-hygiene.md`](<workspace>/.claude/rules/worktree-hygiene.md)
-   § "Check unmerged commits before `git worktree remove --force`" before destroying any
-   worktree branch.
-3. If there are uncommitted changes to plan docs, memory-adjacent files, or other files
-   modified/created this session:
-   - List them under a **Git** heading.
-   - **Recommend committing and pushing**, framed as the default. Phrase the ask as "Commit and push? (recommended for clean handoff)" — not a neutral "do you want to?". The clean-tree goal is the load-bearing reason; surface it.
-   - Draft a descriptive commit message covering the session's work (see commit guidelines in the host system prompt). Include all session-modified files in the commit; never leave session work split across "this commit" + "still unstaged" — that's exactly the leakage the skill exists to prevent.
-   - If the user confirms, commit AND push in the same turn (don't stop after commit).
-4. If any branch is ahead of its remote (committed but not pushed) — including pre-existing commits unrelated to this session — recommend pushing. Old unpushed commits are sediment that confuses the next session's `git log`; clear them now.
-
-**CRITICAL: Resolve all git state BEFORE generating the transition prompt.** If the user
-confirms a commit or push, execute it in the same turn and re-read git state afterward,
-so the transition prompt reflects the final post-push state (branches pushed, remote SHAs
-up to date, "Git: clean, up to date with remote"). Generating the prompt first and pushing
-afterward forces the user to re-run session-wrap to get an accurate handoff — defeats the
-purpose. If the user declines to push, still generate the prompt in the same turn but with
-an explicit "unpushed commits on X, Y" note so the next session knows to check.
-
-Do NOT commit or push without asking — but DO frame the ask as a recommendation, not a neutral surfacing. The user invoked session-wrap because they want a clean handoff; honor that intent.
-
-### Post-build-phase cleanup
-
-Scan the conversation for signs that a `/build-phase` ran this session (checkpoint commits,
-step completion comments, the final build-phase report table). If detected, run these
-additional checks and **act on them automatically** — do not ask for confirmation on each
-item. These are safe, non-destructive cleanup actions that should always happen after a
-build-phase completes.
-
-1. **Push** — if local is ahead of remote, push. Build-phase generates many checkpoint
-   commits that should not sit unpushed.
-
-2. **Close completed issues** — read the plan doc for steps marked `Status: DONE` that have
-   an `Issue: #N` field. Check each with `gh issue view N --json state -q .state`. Close
-   any that are still open with a brief completion comment.
-
-3. **Plan doc Current State freshness** — the "Current State" or "What exists" / "What's
-   missing" section in the plan doc is almost certainly stale after a full phase. Read it
-   and update to reflect what was just built. Remove "missing" items that Phase N delivered.
-   Add new deliverables to "What exists."
-
-4. **Worktree cleanup** — check for leftover `.claude/worktrees/agent-*` directories.
-   Remove with `git worktree remove <path> --force` and delete the corresponding
-   `worktree-agent-*` branches.
-
-5. **Phase status** — if all steps in the phase are marked DONE, ensure the phase-level
-   status line is also marked DONE with the date and final test count.
-
-Report what was done in the prep summary under a **Post-build-phase cleanup** heading.
+Raw tokens are not a percentage: a percentage needs a model-aware window size, and
+extended (>200k) windows exist on this machine. When the window size is unknown, apply
+the raw-token proxies directly and, if a percentage is reported at all, SAY the
+denominator is assumed — e.g. `162,340 tokens (~78% assuming a 200k window)`. Never
+present an assumed percentage as a measurement.
 
 ---
 
-## Step 3: Generate the transition prompt
+## Step 0 — triage: collect, score, announce
 
-Write a copy-paste ready block (wrapped in a markdown code fence labeled `text`) that the
-user can paste as the first message in a fresh context window.
+**Read `current.md` first.** Before deriving any next action or route, read
+`<git-root>/.claude/task-state/current.md` (path resolution per the schema doc; absent
+file = no recorded task — it gets created from the template on the first route write).
+`current.md` plus git is the state; conversation prose is not. Every next action this
+skill writes or renders derives from `current.md`, never in parallel from prose.
 
-The transition prompt must be **completely self-contained** — assume the new context has
-zero knowledge of this conversation.
+Collect four signals:
 
-### CRITICAL formatting rule — no nested code fences
+**(a) Context utilization.** Chosen signal (decision doc:
+`docs/investigations/context-signal-spike.md`):
+the `message.usage` sum (`input_tokens + cache_creation_input_tokens +
+cache_read_input_tokens`) of the LAST top-level main-chain assistant entry in the
+session transcript JSONL. Run the reference implementation rather than reimplementing
+the guarded recipe: `docs/investigations/high-context-usage-tools/read-context-signal.ps1`.
+Skill-mode transcript resolution: glob `~/.claude/projects/<project-slug>/*.jsonl` and
+require EXACTLY ONE file modified within the last ~2 minutes — zero or more than one
+candidate is ambiguous and means signal absent (sibling-session risk; never blindly
+take the newest). When the signal is absent for ANY reason, print exactly this line
+(ASCII hyphen — this exact wording is the contract) and triage on (b)-(d) alone:
 
-The transition prompt lives inside a ` ```text ` code fence. Any triple-backtick inside it
-(` ```bash `, ` ```shell `, ` ``` `) will **terminate the outer fence** and break the output.
+    context signal unavailable - boundary-only triage
 
-**NEVER use triple-backtick code fences anywhere inside the transition prompt.** Instead:
-- For shell commands: list them as plain indented text lines (2-space indent)
-- For file paths or inline code: use single backticks
-- For multi-line code snippets: indent with 4 spaces (no fence)
+Never guess, estimate, or fabricate a token count or percentage — a fabricated number
+is indistinguishable from a real one and steers the route wrong (measurement-validity
+rule).
 
-This applies to ALL sections, not just Verification commands.
+**(b) Task-boundary state.** From the `current.md` read above: Status + Next Action.
+Plus the active plan's step `**Status:**` lines (plan located per CLAUDE.md § Plan
+location — `plan.md`/`master_plan.md` at the project root or under
+`plans/`/`docs/`/`documentation/`; descriptor-contract §4), and whether the
+just-finished turn completed a step or phase. At/near a boundary = Status COMPLETE, a step just flipped
+DONE, or the turn closed a task. Mid-task = everything else.
 
-### Required sections in the transition prompt
+**(c) Git state.** Per touched repo — a multi-project session (2+ distinct project
+dirs edited, or a project repo plus `dev/` workspace-root files) checks EACH repo:
+branch, short SHA, dirty-file count, ahead-of-origin count.
 
-**1. Project identity** (2–3 lines)
-- Name, working directory path, one-sentence description of what it is
+**(d) Armed `/goal`.** An unmet agent-completable goal biases `continue`.
 
-**2. What was accomplished this session** (bullet list)
-- Concrete, specific — what files were written or changed, what decisions were made
-- 3–8 bullets; skip anything trivial
+**Score — first match wins:**
 
-**3. Current state** (1 short paragraph or bullet list)
-- Phase/step, test counts, any known failures or open issues
-- What is and isn't built yet
-- **Current SHA — required:** include `git rev-parse --short HEAD` output verbatim (e.g., `HEAD @ 4e0c14d`). This anchors §6's first-bullet verify check; omitting it makes the verify bullet ungrounded.
+1. Operator intent ("done", "end of day", explicit `--end`), or no agent-completable
+   next action exists -> `end-window`.
+2. Utilization >= `CLEARNEXT_FORCE_UTIL` -> `clear-next` now (finish only the
+   in-flight edit, not the task).
+3. Utilization >= `CLEARNEXT_UTIL` and at/near a boundary -> `clear-next`.
+4. Everything else — below `CONTINUE_MAX_UTIL` and mid-task, signal absent with no
+   operator intent, armed unmet `/goal`, or any uncertainty -> `continue`.
+   `continue` is the bias because it is the cheapest wrong answer.
 
-**4. Next action** (1–3 lines, very specific)
-- The exact first thing to do — command, skill invocation, or file to read
-- If a session prompt file exists and is current, say: "Start by reading [path]"
-- **If the next action is gated on human review of findings** (i.e. the intent is
-  "investigate and report back before proceeding"), split it into two clearly
-  labelled sub-blocks — never co-locate a gate and an action in the same prose
-  block, because a fresh zero-context session reads a single block as a sequential
-  task list and executes everything autonomously:
+**Announce, then act.** Print exactly ONE triage line BEFORE acting, so a wrong route
+is visible and correctable immediately:
 
-  > **Investigate:** [what to read or run] — end with: "Post your findings here
-  > and STOP. Wait for user response before proceeding."
-  >
-  > **After user approval:** [downstream command or skill] — prefix with: "DO NOT
-  > run this until the user responds to your findings above."
+    triage: <route> | context: <N tokens (~X% assuming 200k)> | boundary: <mid-task | at boundary (<what>)> | git: <n dirty, m ahead[, per-repo]> | goal: <armed | none>
 
-**5. Key files to read first** (ordered list)
-- 2–5 files, most important first
-- One-phrase note on why each is needed
-
-**6. Critical warnings** (bullet list, ≤5 items)
-
-The FIRST bullet is required and fixed in form — it is the next-session
-git-verification anchor that pairs with §3's Current SHA:
-
-> **First action — verify git state matches this prompt:** run `git log --oneline -5`
-> and `git rev-parse --short HEAD`. If HEAD does not match the SHA stated above under
-> "Current state", the prompt is stale — re-orient against actual git state before
-> doing any work.
-
-Then add ≤4 more bullets covering project-specific risks:
-- Things that will cause failures if the new context gets them wrong
-- Only include what is NOT obvious from reading the listed docs
-- Prefer high-signal, specific warnings over general reminders
-
-Why the first-bullet rule: saved prompts freeze a pre-execution view of the project; parallel windows may have committed since this prompt was written. The verify bullet pairs with [`feedback_verify_state_vs_session_prompt.md`](~/.claude/projects/<project>/memory/feedback_verify_state_vs_session_prompt.md) — Alpha4Gate stale-prompt incident cost ~15 min before the rule existed.
-
-**7. Verification commands** (plain indented lines, 2-space indent)
-- Shell commands to confirm the project is in the expected state
-- Typically: typecheck, lint, test
-
-**8. Required context** (1–3 lines)
-- Magic words, CLAUDE.md requirements, or hook behaviours the new context must know
-- The magic word for this project is AmaRocket (include if the project has a CLAUDE.md)
+(substitute the fail-loud contract line for the context segment when the signal is
+absent).
 
 ---
 
-## Output format
+## Route: `continue`
 
-Output two clearly separated parts:
+Invoke `task-handoff --loop` via the Skill tool. Screen output is ONE composed line
+total — the library's own `Checkpoint written.` line is subsumed into it, never
+printed separately:
+
+    Checkpoint written — continuing (<one-clause reason from the triage>).
+
+Nothing else — no summary, no rendered prompt, no wall of text.
+
+## Route: `clear-next`
+
+Durable state to disk, then the git verb, then hand the operator `/clear`. Execute in
+this exact order — `current.md` first, render second, screen last:
+
+1. **Write `current.md`** — invoke `task-handoff --loop --no-commit` via the Skill
+   tool (read-merge-write per the schema doc, which owns the per-field
+   append-vs-overwrite rules). Next Action = the exact command or skill invocation.
+   **No-regress clause:** the read-merge-write must never regress a Next Action that
+   is already the exact next command from a boundary write made earlier this same
+   turn/step (e.g. plan-expedite's `--next-task` write) — preserve it verbatim; the
+   render carries Next Action verbatim (rendering contract item 4), so an overwrite
+   here would silently drop it.
+   The route's own git verb (step 5) carries the commit — same no-double-commit
+   rationale as build-phase Step 2e. Do NOT use `--next-task` here: it commits and
+   pushes itself, doubling up with the route's git verb.
+2. **Decisions log + salvage sweep** (section below) — bounded; results land in
+   `current.md` (§ Parked / Critical Gotchas) and the render, not on screen.
+3. **Cheap memory subset only:** correct the project's MEMORY.md status pointer line
+   if this session made it wrong, and park unfiled TODOs; the full
+   memory/lessons/friction passes are end-window-only.
+4. **Render `handoff-prompt.md`** from `current.md` + the decisions log (rendering
+   contract below).
+5. **Execute the git verb** — run the Git-verb router (section below): anomaly
+   pre-flight, commit-owner decision, additive recommendation, one-line report.
+   The router's base commit is the carrying commit step 1 deferred; when it
+   delegates, `/repo-update`'s commit sweeps `current.md` in.
+6. **Screen: the Pick-up-here block** (contract below), exact next command =
+   `/clear`. The next window resumes via the SessionStart hook re-injecting
+   `current.md`.
+
+## Route: `end-window`
+
+Everything in `clear-next`, same order — including step 1's
+`task-handoff --loop --no-commit` write — with these passes inserted after step 3
+(before the render, so their outcomes are renderable):
+
+- **Full memory pass — read-then-report (invariants 1 and 4).** Read MEMORY.md
+  (`~\.claude\projects\<workspace>\memory\MEMORY.md`) fully
+  (if the first Read reports a partial load, continue with offset reads until the
+  whole file is covered — a partial read cannot honestly claim "Read MEMORY.md"). For
+  every topic touched this session, state `existing entry for <topic> was
+  current|stale` or `no existing entry for <topic>` BEFORE describing any change.
+  Update stale entries in place; never append a duplicate. Multi-project sessions
+  check each touched project's heading. If MEMORY.md exceeds 200 lines or any line
+  exceeds 200 chars, add a `MEMORY.md over budget (X lines)` invariant flag to the
+  digest — do not auto-trim.
+- **Lessons-learned sync.** Any feedback memory created or edited this session syncs
+  both layers: long form in `docs/lessons-learned.md` (matching `### Title` heading +
+  ToC entry), thin pointer in the `feedback_*.md`, index line in MEMORY.md. Never
+  leave the long form duplicated in both layers. Project-scoped memories do not sync
+  there.
+- **Friction review.** Scan the session for patterns that would slow future sessions:
+  failed commands that needed rework, wrong assumptions, missing context, clunky
+  workflows. Actionable friction becomes a feedback memory (then syncs per the bullet
+  above). Skip one-off flukes entirely and never record retry counts (invariant 6). A
+  clean session reports nothing.
+- **Docs staleness.** If plan.md or a session doc no longer reflects what shipped,
+  update it now or name it in the digest — never silently leave a stale doc. Cheap
+  side-check: if `docs/friction-catalog.md` exists and any `feedback_*.md` is newer
+  than its indexed date, add a `friction catalog stale` digest flag (do not
+  regenerate it).
+
+The Pick-up-here block's exact next command becomes the fresh-window opener instead
+of `/clear` (contract below) — the SessionStart hook does not fire on plain startup,
+so the opener must carry the pointer. With opt-in `--spawn` (section below), the deep
+link then auto-opens the next window pre-filled with that opener; the block on screen
+stays the baseline.
 
 ---
 
-### Part 1 — Prep summary
+## Git-verb router (clear-next + end-window, step 5)
 
-A bullet list of 4–8 items (one item per line, each on its own line) for the user confirming:
-- **Memory checked:** "Read MEMORY.md." then list what entries were written or updated (by name/topic). If any feedback memory was created or updated, also note the corresponding `dev/docs/lessons-learned.md` section that was added/edited (or "lessons-learned.md unchanged — no feedback edits this session")
-- **Docs status:** Status of plan.md and any session prompt file (current / stale / absent)
-- **Git:** Uncommitted changes, unpushed commits, or "clean, up to date with remote"
-- **Issues:** Any issues noticed that need attention before the new session starts
-- **Self-contained:** Whether the transition prompt is fully self-contained or relies on an external file
-- **Post-build-phase cleanup:** (only if build-phase detected) What was pushed, issues closed, docs updated, worktrees cleaned. Or "N/A — no build-phase this session."
-- **Friction found:** List any friction items discovered, or "None — clean session"
-  - For each item saved as feedback memory, note the memory file name
-  - Do NOT mention one-off flukes (typos, transient errors) even to say they were excluded
+The single owner of the route's git verb. Four steps, in order: A anomaly
+pre-flight, B commit owner, C additive recommendation, D report. Multi-project
+sessions run Steps A-C independently PER TOUCHED REPO — mixed outcomes across
+repos are legal — and Step D joins the segments.
+
+**Step A — anomaly pre-flight (before ANY verb, delegation included).**
+CLAUDE.md § Parallel session safety and § Session wrap & commit discipline stay
+senior to execute-by-default. Run all four checks BEFORE Step B
+(PowerShell-first). Scope: check 1 runs at the workspace root — a trigger
+there downgrades ALL repos; checks 2-4 run per touched repo — a trigger
+downgrades that repo only.
+
+On a trigger, the downgraded scope's Steps B/C are WITHHELD — the route is
+not: the render and the Step D report still run, the pending repo's segment
+reads `ask-first pending`, and route step 6 does NOT emit `/clear` while any
+segment is pending. The Pick-up-here block's exact next command becomes the
+ask response — approve or adjust the presented plan — never `/clear` past an
+open gate (never co-locate a gate and an action; rendering-contract item 4).
+Presentation: base-action path = the scoped add list + the commit message;
+delegate path = the intended `/repo-update` invocation + the trigger evidence.
+This ask is the single sanctioned (y/n) gate in this skill. The checks:
+
+    # 1. Foreign state file at the workspace root
+    Get-ChildItem -Force <git-root>\.plan-expedite-state.* | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
+    # 2. Worktrees beyond the main checkout, then two activity probes per hit
+    git worktree list
+    git log -1 --format=%cr <worktree-branch>
+    Get-Item <git-root>\.git\worktrees\*\index -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
+    # 3. Cross-repo/foreign edits
+    git status --porcelain
+    # 4. Foreign commits: reachable from other refs, not from this HEAD
+    git log --all --not HEAD --since='1 hour ago' --oneline
+
+Trigger tests, one per check:
+
+1. **Foreign state file** — a hit whose plan path does not match this
+   session's active plan (from `current.md`'s Task / plan reference).
+   Plan-mismatch or unknown = foreign = trigger.
+2. **ACTIVE foreign worktree** — a worktree beyond the main checkout whose
+   branch tip committed within ~24h OR whose git index mtime is within ~24h
+   (index mtime moves on staging/checkout activity before any commit exists —
+   a tip-only test reads an uncommitted parallel session as stale). A worktree
+   failing both probes is stale: ONE digest note line, never an ask.
+3. **Cross-repo/foreign edits** — a modified TRACKED file outside this
+   session's edit set. The edit set = the files the executor knows it edited
+   this session (its own history), corroborated by `current.md`'s Completed
+   entries; Key Files is a CURATED subset (schema: populated only on notable
+   discoveries), never the authoritative touched list. Untracked strays never
+   fire — they are simply not added.
+4. **Foreign commits** — any output line. `--not HEAD` excludes this session's
+   own HEAD-lineage checkpoints; the session's own commits on OTHER refs (e.g.
+   an unmerged build-step worktree branch) may still surface — that ask errs
+   safe.
+
+**Step B — commit owner (exactly one).** The scoped commit+push of session
+files is the ALWAYS-RUN base action unless explicitly delegated:
+
+- **Delegate to `/repo-update`** — phase/feature completed this session.
+  Detection: the active plan (discovered per Step 0(b)) exists, has >= 1
+  step, and every step reads `**Status:** DONE` (the >= 1-step guard blocks
+  the vacuous all-DONE of a step-less pointer plan), OR a build-phase
+  completion report was produced this session. Action: invoke `/repo-update`
+  via the Skill tool — it owns shipping (README/docs updates, commit, push,
+  posterity issue); this skill duplicates none of that work, and its commit
+  sweeps in the `current.md` written at route step 1. If `/repo-update` fails
+  partway, run the base action below so nothing is stranded, and surface the
+  repo-update failure in the digest.
+- **Base action** — everything else. Detection: the delegate test above did
+  not match. Action: scoped `git add` of the session edit set (as defined in
+  check 3) **plus `current.md` itself** + commit + push, EXECUTED by
+  default — this is the carrying commit route step 1 deferred
+  (`--loop --no-commit`). A clean tree is a LEGAL outcome — e.g. a boundary
+  write earlier this turn (plan-expedite's `--next-task`) already carried the
+  commit+push; skip the empty commit and report `nothing to commit` in Step D.
+  Clean but AHEAD of origin (an earlier push failed): still push, and report
+  `pushed <n> pending` as the verb outcome instead.
+  Never `git add -A` — every add names explicit
+  paths; never add `handoff-prompt.md`.
+
+**Step C — additive recommendation (independent of Step B).** Step C runs
+regardless of which owner committed (withheld only when Step A downgraded its
+scope, like Step B) and NEVER changes the commit owner; the recommended
+COMMAND is never run mid-wrap.
+Detection: the plan doc structurally changed this session — `### Step`
+headings added/removed/renumbered, or step fields (Type / Depends on /
+Done when) edited; more than Status-line flips. Action: add ONE recommendation
+line to the digest —
+
+- plan-review ran this session (in `current.md` Completed or this
+  conversation), or the plan carries a fresh review marker → recommend
+  `/repo-sync`. Order guard: never repo-sync before plan-review
+  (`.claude/rules/plan-and-issue-flow.md`).
+- review status unknown or absent → treat as NOT reviewed; recommend
+  `/plan-review` first.
+
+**Step D — report.** One line total, one segment per touched repo,
+` / `-joined. Invariant 3 owns the base segment shape (cross-reference, not
+restated); Step D appends only the verb outcome, ONE shared shape whichever
+Step-B path ran:
+
+    <invariant-3 segment> — <repo-update | committed N files + pushed @ <short-sha> | nothing to commit | ask-first pending>
 
 ---
 
-### Part 2 — Transition prompt
+## Rendering contract — `handoff-prompt.md`
 
-A single code fence labeled `text` containing the full transition prompt.
-The user copies everything inside the fence and pastes it as the first message.
+`<git-root>/.claude/task-state/handoff-prompt.md` is a **rendering of `current.md`
+plus the session's decisions log — never independently derived.** Every state field
+in it (task, status, next action, SHAs, key files, gotchas) comes from the
+just-written `current.md`; if the render needs a fact `current.md` lacks, write
+`current.md` first, then render. Write order on both routes: `current.md` -> render
+-> screen. Lifecycle + staleness rows live in the schema doc.
+
+- **Untracked-on-purpose.** Session-local; never `git add` it. `current.md` remains
+  the committed durable state.
+- **Self-contained for a zero-context reader**, in this shape:
+  1. Identity — project name, working directory, one line on what it is.
+  2. State — Status + one `HEAD @ <short-sha>` line per touched repo (invariant 3).
+  3. Verify-first instruction (invariant 2, exact form below).
+  4. Next action — verbatim from `current.md`. If it is gated on human review, split
+     it into an **Investigate** block ending "post findings and STOP" and a separate
+     **After approval** block — never co-locate a gate and an action (a zero-context
+     reader executes a single block sequentially).
+  5. Decisions log — N decisions = N bullets, rejected alternatives kept.
+  6. Key files + critical gotchas from `current.md`; parked/salvage pointers.
+- **No nested code fences anywhere in the render** (invariant 5): commands as
+  2-space-indented plain lines, paths and inline code in single backticks.
+- **No flukes, no retry counts** (invariant 6).
 
 ---
 
-## Length and tone guidelines
+## Pick-up-here screen contract
 
-- Transition prompt target: 300–600 words inside the fence. **The 300-word minimum is a hard
-  floor** — if your draft is under 300 words, expand Critical warnings and Key files with
-  more detail until you reach at least 300
-- Omit anything the new context can derive by reading the docs listed under "Key files"
-- One precise warning beats three vague ones
-- If a well-maintained session prompt file exists (like `phase4-prompt.md`), keep the
-  transition prompt short and direct the new context to read that file — do not duplicate it
-- The prep summary should feel like a quick handoff note, not a report
+The screen output of `clear-next` and `end-window` is exactly this — the ONLY
+required reading (plus, when `--spawn` was typed, one trailing spawn-status line —
+a fired-mechanism report, not part of the render):
+
+    ## Pick up here
+    <exact next command(s), verbatim>
+
+    <digest: <=6 lines>
+    Full handoff: .claude/task-state/handoff-prompt.md
+
+- **Exact next command(s):** `clear-next` -> `/clear` — unless any router
+  segment reads `ask-first pending`; then the next command is the ask response
+  (Git-verb router Step A), never `/clear` past the open gate. `end-window` -> the
+  fresh-window opener, verbatim with an absolute path, e.g.
+  `Read <project-root>\.claude\task-state\handoff-prompt.md fully, verify git state per its first instruction, then execute its Next Action.`
+- **Digest (<=6 lines):** route + signal values; the git verb executed (repo, branch,
+  SHA); memory/docs updates by name; invariant flags (`MEMORY.md over budget`,
+  `friction catalog stale`, ...).
+- **One pointer line** to `handoff-prompt.md`. Everything longer lives in the render,
+  not on screen.
+
+There is NO minimum length anywhere in this skill — no word-count floor for the
+digest, the render, or any block. Terseness and specificity are coupled constraints;
+see the note under the invariants.
 
 ---
+
+## `--spawn` — auto-open the next window (end-window only, opt-in)
+
+**Opt-in only.** `--spawn` fires only when the operator typed it explicitly (e.g.
+`/session-wrap --end --spawn`) AND the routed action is `end-window`. Bare
+`/session-wrap`, plain `--end`, the `continue` and `clear-next` routes, and every
+chaining skill never auto-open a window — no default path fires a deep link
+(plan-expedite's `--new-window` invokes `--end` WITHOUT `--spawn`; build-phase and
+build-queue never spawn). `--spawn` alongside a non-`end-window` route is ignored
+with this exact line:
+
+    --spawn ignored (route was <route>, not end-window).
+
+Fire AFTER the Pick-up-here block is on screen — the baseline must exist whether or
+not the link works — via `code --open-url` (PowerShell; re-derived from stranded
+commit `1c241a7`, behavior verified 2026-06-22):
+
+    # --spawn deep link: try/catch because a missing `code` on PATH raises a
+    # terminating CommandNotFoundException in PS 5.1 (an unguarded call would
+    # die before the spawn-failed line could print)
+    try {
+        $gitRoot = (git rev-parse --show-toplevel).Trim() -replace '/','\'
+        $pointer = "Read $gitRoot\.claude\task-state\handoff-prompt.md fully, verify git state per its first instruction, then execute its Next Action."
+        code --open-url "vscode://anthropic.claude-code/open?prompt=$([uri]::EscapeDataString($pointer))"
+        if ($LASTEXITCODE -ne 0) { throw "code exited $LASTEXITCODE" }
+        Write-Output "spawned next window - press Enter there"
+    } catch {
+        Write-Output "spawn failed ($($_.Exception.Message)) - use the Pick-up-here block above"
+    }
+
+- **The pointer IS the Pick-up-here fresh-window opener, verbatim** — one source of
+  truth. Never pass the handoff text itself (protocol-URI args have a length
+  ceiling); always the absolute git-root path, so the new session resolves it
+  regardless of cwd.
+- **URL-encoding:** `[uri]::EscapeDataString` percent-encodes spaces, backslashes,
+  and colons, but leaves `(` `)` `'` un-encoded (live-verified on this machine's
+  .NET) — so the pointer text must avoid parentheses and apostrophes. Never
+  hand-build the query string.
+- **`code --open-url`, NOT `Start-Process`** — `Start-Process "vscode://..."`
+  silently no-ops here (the URI reaches the OS handler but never routes to the
+  running extension's window).
+- The deep link PRE-FILLS the prompt but does not auto-submit — the operator presses
+  Enter once in the spawned window. This window does not auto-close; it stays open
+  as a backup until the operator switches. First use shows a one-time OS trust
+  prompt ("allow ... to open this URI").
+- **Armed unmet `/goal`:** the Stop hook re-drives this window regardless of the
+  spawn — true termination is blocked until the goal is met or cleared. The
+  end-window digest must surface an armed goal (triage signal (d)) so the operator
+  clears or meets it before the old window actually ends.
+
+**Copy-paste remains the irreducible baseline** (command-presentation rule): with
+`--spawn` absent, ignored, or failing, the Pick-up-here block already on screen is
+the fully usable handoff — the deep link is best-effort enhancement, never a
+replacement. After firing, report exactly ONE spawn-status line, ASCII hyphen, as
+emitted by the snippet: `spawned next window - press Enter there`, or on any failure
+(`code` missing from PATH, non-zero exit, headless/terminal session with no VS Code
+extension) `spawn failed (<reason>) - use the Pick-up-here block above`.
+
+---
+
+## Decisions log + salvage sweep (clear-next + end-window)
+
+Not a session summary. Two bounded passes:
+
+1. **Decisions log.** Enumerate the decisions made this session and the alternatives
+   REJECTED — N decisions = N bullets, keeping but/except constraints ("chose X over
+   Y because Z, except in case W"). Rejected alternatives are the part a fresh window
+   cannot re-derive; keep them.
+2. **Salvage sweep.** List knowledge that dies with this window: investigation
+   findings written nowhere, seed docs worth creating, TODOs discovered but not
+   filed. Each item is either **written now** (if it takes <= a few minutes) or
+   **parked** as a pointer in `current.md` § Parked plus the project's MEMORY.md
+   entry. Nothing gets a third option.
+
+---
+
+## The six behavioral invariants
+
+Explicit requirements — every `clear-next`/`end-window` run satisfies all that apply:
+
+1. **Read-then-report memory discipline.** Read MEMORY.md and the touched memory
+   files BEFORE updating them; report what was read and the per-topic
+   current/stale/absent verdicts before describing changes (full form in the
+   end-window route).
+2. **Git-verify-first + SHA anchor.** The render states `HEAD @ <short-sha>` and its
+   verify-first instruction reads: *"First action — verify git state matches this
+   prompt: run `git log --oneline -5` and `git rev-parse --short HEAD`. If HEAD does
+   not match the SHA above, this prompt is stale — re-orient against actual git state
+   before doing any work."* (Saved prompts freeze a pre-execution view; git is the
+   only live state.)
+3. **Per-repo SHA lines in multi-project sessions.** Every touched repo gets its own
+   ` / `-delimited status segment (name, branch, ahead-count, dirty state — e.g.
+   `toybox master clean / dev master 2 unpushed, 1 dirty`) and its own
+   `HEAD @ <sha>` line in the render. One combined SHA is non-conforming.
+4. **Duplicate-memory guard + MEMORY.md budget warning.** Check for an existing
+   memory before writing; update stale entries instead of appending duplicates.
+   Over-budget MEMORY.md (>200 lines, or any line >200 chars) raises a digest flag,
+   never an auto-trim.
+5. **No nested code fences** in the render or any copy-paste block — indented command
+   lines and single backticks only; a triple backtick inside a copy-paste block
+   terminates it and breaks the paste.
+6. **Fluke-exclusion.** Transient failures, one-off typos, and retry counts appear
+   nowhere: not in the render, not in the digest, not in memory. Describe the
+   pattern, never the episode.
+
+**Coupled-constraint note (edit these together).** Invariants 5-6 plus the <=6-line
+digest and the no-floor rule are the *terseness* side; invariants 1-3 plus the
+verbatim next action are the *specificity* side. Edited in isolation they regress
+each other — 4 of the first 8 eval iterations on the predecessor skill were discarded
+for exactly that. Any future edit to one side must re-check the other.
+
+---
+
+## Flags
+
+- **bare** — triage (Step 0), then the routed action. The default and safest mode.
+  Never fires a deep link.
+- **`--end`** — operator intent made explicit: skip threshold scoring, route
+  `end-window`. (`/task-handoff --end` delegates here.) An optional trailing
+  free-text token (e.g. the plan path plan-expedite passes) is an advisory focus
+  hint only — every rendered next action still derives from `current.md`.
+- **`--spawn`** — opt-in deep-link auto-open of the next window whenever the routed
+  action is `end-window`: typically typed as `--end --spawn`, but bare `--spawn`
+  also fires if triage itself routes `end-window`, and is otherwise ignored with the
+  exact line in the `--spawn` section above. Nothing ever spawns without the
+  explicit flag.
+- **`--advise`** — triage (Step 0) + a read-only salvage-sweep preview, then the
+  4-verdict banner + two-line loss report (section below) and STOP. Never writes,
+  never runs a git verb, never emits `/clear`; `--end`/`--spawn` alongside it are
+  ignored. `SAFE TO CLOSE` exists only here — bare triage still scores exactly
+  three routes.
+
+---
+
+## `--advise` — verdict + loss report (read-only, never acts)
+
+For the returning operator who wants the triage verdict WITHOUT the action — "can I
+close this window without losing anything?".
+
+- **Same triage, plus a preview.** `--advise` runs Step 0 triage exactly as bare mode
+  does (same signals, same first-match-wins scoring) plus a READ-ONLY preview of the
+  salvage sweep — what `end-window`'s sweep (section above) WOULD find: uncommitted
+  work, unpushed commits, un-checkpointed or git-inconsistent `current.md` state,
+  findings and TODOs written nowhere. Freshness follows the staleness threshold owned
+  by `task-state-schema.md`; consistency is
+  Step 0's own Session-SHA-vs-HEAD signal.
+- **Prints, then STOPS.** The report below is the entire output. Zero writes, zero
+  git mutations: no `current.md` write, no render, no git verb, no `task-handoff` or
+  `/repo-update` invocation, no Pick-up-here block, no `/clear` emission, no spawn.
+- **Bare mode untouched.** The 3-route triage-then-act contract runs only when
+  `--advise` is absent, and `SAFE TO CLOSE` exists only here, never as a fourth bare
+  route.
+- **Flag interplay.** `--end`/`--spawn` alongside `--advise` are ignored (advise
+  never acts, so there is nothing to force or spawn).
+
+The triage line still prints first (Step 0's announce contract), with the route
+segment marked as computed-not-acted:
+
+    triage: advise (would route <route>) | context: <N tokens (~X% assuming 200k)> | boundary: <mid-task | at boundary (<what>)> | git: <n dirty, m ahead[, per-repo]> | goal: <armed | none>
+
+Then the report — one verdict banner plus a two-line loss report, nothing else:
+
+    ## <VERDICT>
+    Already durable: <what is safe, with evidence - commits/pushes with short SHAs, current.md Last written timestamp + freshness verdict, Session SHA vs HEAD>
+    Dies with this window: <each at-risk salvage-preview item with a count plus a path/SHA/identifier - or exactly `nothing` when the preview is empty>
+
+**The four verdicts** — exactly one banner per run, from this closed set:
+
+| Verdict | Condition |
+|---|---|
+| `KEEP GOING` | Triage would route `continue`. |
+| `RECYCLE WINDOW` | Triage would route `clear-next`. |
+| `WRAP & CLOSE` | Triage would route `end-window` AND something would die with the window. |
+| `SAFE TO CLOSE` | `end-window` would be a NO-OP — ALL of: `current.md` fresh (schema-doc threshold) and consistent with git (Session SHA matches HEAD), clean tree in every touched repo, nothing unpushed/ahead anywhere, no armed `/goal`, salvage preview empty. |
+
+The two end-window verdicts partition that route: every no-op condition holds ->
+`SAFE TO CLOSE`; any single failure -> `WRAP & CLOSE`, and the failing item IS the
+loss — it lands on the `Dies with this window:` line, named concretely. The loss
+report is the centerpiece (the operator's real anxiety is losing work): hedged prose
+("some work may be lost") is a defect — SHAs, counts, timestamps, and paths are the
+contract, and an empty preview reads exactly `nothing`.
 
 ## Maintenance
 
-This skill ships with an eval framework at [`evals/`](evals/). Before editing SKILL.md, read [`evals/iteration_log.md`](evals/iteration_log.md) — 4 of the first 8 iterations were DISCARD because a fix to one assertion regressed another. After any change, run the full produce-then-grade suite (canonical procedure: [`~/.claude/skills/skill-eval-setup/SKILL.md`](../skill-eval-setup/SKILL.md) § "Self-improvement prompt template"; smaller model produces, sonnet grades strict, borderline = FALSE). The current contract is **23 assertions × 4 scenarios = 92 assertion-evaluations** with `passing_threshold: 21/23` per the (N−2)/N skill-eval-setup convention. Discard any change that regresses a prior-passing assertion even if it improves others. Append iteration rows to [`evals/iteration_log.md`](evals/iteration_log.md) in the existing Markdown table format (`| Iteration | Score | Result | Change Attempted |`); do not switch to a bulleted format — continuity with iterations 1–13 matters for trace readability. When adding or removing assertions, update both the count cited here AND `passing_threshold` in [`evals/evals.json`](evals/evals.json) in the same diff.
+The `evals/` suite targets THIS triage contract (rebuilt 2026-07-12, #297;
+`--advise` category added 2026-07-13, #304): **26 assertions** across **6
+categories** in `evals/evals.json` (passing threshold **24/26**), **5 scenarios** in
+`evals/test_scenarios.json` (one per route, the signal-absent fail-loud path, and the
+`--advise` SAFE-vs-WRAP close-check), and a golden corpus of 8 goods + 26
+single-defect bads under `evals/golden/` (manifest.json maps each bad to the one
+assertion it trips). Any edit that changes an output contract here (triage line,
+route output, Pick-up-here block, render invariants, advise verdict banner or loss
+report) must update the affected assertions and goldens in the same diff, keeping
+this footer's numbers equal to `evals.json`'s. Terseness and specificity assertions
+are coupled (see the invariants note) — re-check both sides after any one-sided
+edit.
