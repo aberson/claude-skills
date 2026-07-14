@@ -52,10 +52,43 @@ Two notes on reading the maps:
 - Pipeline skills are **autonomous by default**: no mid-run "(y/n)?" prompts. Conversational skills
   (`plan-init`, `plan-feature`, `plan-merge`, `plan-trim`, the `user-*` ideation skills) stop and ask
   by design.
-- The full **routing web** — which rail an operator fragment lands on (bug / do / plan /
-  investigate / verify / trim / decide / draft) and the sanctioned re-route edges between rails —
-  lives in [_shared/skill-pipeline.md](_shared/skill-pipeline.md). `/user-gateway` consults it per
-  fragment; no skill hardcodes its own routing table.
+
+### The routing web
+
+The maps below chart the pipeline rails; this one charts **how work reaches a rail in the first
+place.** Every operator fragment — a bug report, a half-formed feature idea, a "does this even
+work?" — lands on one of **8 rails**, and `/user-gateway` is the intake front door that sorts a
+whole brain-dump across them, one ledger row per fragment, inventing nothing of its own. A rail is
+a starting guess, not a cage: the dashed **re-route edges** correct a mis-route mid-flight. The
+`plan` rail forks by project age — `/plan-feature` for an existing codebase, `/plan-init` to author
+a brand-new one (the gateway routes a new-project fragment *to* plan-init; it never authors the
+plan itself). The full 8-rail table and all 9 re-route edges live in
+[_shared/skill-pipeline.md](_shared/skill-pipeline.md); no skill hardcodes its own routing table.
+
+```mermaid
+flowchart TD
+    V["operator vent<br>(everything on your mind about a topic)"]
+    V --> G["/user-gateway<br>intake ledger: one row per fragment,<br>routed; invents nothing of its own"]
+    G --> W{"routing web<br>(_shared/skill-pipeline.md)"}
+
+    W -->|"symptom in hand"| BUG["bug → /user-debug"]
+    W -->|"small resolved task"| DO["do → /goblin-do"]
+    W -->|"build a capability"| PLAN["plan"]
+    W -->|"a question, not work yet"| INV["investigate → /deep-research / Explore"]
+    W -->|"distrust, no symptom"| VER["verify → review-uat / user-uat /<br>user-shakedown / user-walkthrough"]
+    W -->|"plan feels bloated"| TRIM["trim → /plan-trim"]
+    W -->|"A-or-B, operator-only"| DEC["decide → parked for you"]
+    W -->|"rough thoughts"| DRAFT["draft → /user-draft → /goal"]
+
+    PLAN -->|"existing project"| PF["/plan-feature"]
+    PLAN -->|"brand-new project"| PI["/plan-init"]
+    PF --> BUILD["/plan-expedite → /build-phase → /repo-update"]
+    PI --> BUILD
+
+    BUG -.->|"designed, not a defect"| PLAN
+    VER -.->|"a check fails → symptom"| BUG
+    DO -.->|"scope outgrows the atom"| PLAN
+```
 
 ### The core pipeline
 
@@ -307,16 +340,8 @@ is a library it calls or a mode it delegates to.
   by consulting the routing web, each with a ready-to-paste seed — it converts what you said
   and never proposes work of its own.
 
-```mermaid
-flowchart LR
-    V["operator vent"] --> G["user-gateway<br>(intake ledger)"]
-    G --> W{"routing web<br>(_shared/skill-pipeline.md)"}
-    W --> B["bug → user-debug"]
-    W --> P["plan → plan-feature → build rail"]
-    W --> VR["verify → review-uat / user-uat /<br>walkthrough / shakedown"]
-    W --> D["draft → user-draft → /goal"]
-    W --> K["decide → parked for the operator"]
-```
+See the [**routing web** map](#the-routing-web) near the top for how `/user-gateway` sorts a vent
+across all 8 rails.
 
 - The underlying doctrine is *native context management first*: auto-compaction and
   goal-arming handle most sessions, so the default is to keep working in one window and reach
