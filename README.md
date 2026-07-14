@@ -59,36 +59,29 @@ The maps below chart the pipeline rails; this one charts **how work reaches a ra
 place.** Every operator fragment — a bug report, a half-formed feature idea, a "does this even
 work?" — lands on one of **8 rails**, and `/user-gateway` is the intake front door that sorts a
 whole brain-dump across them, one ledger row per fragment, inventing nothing of its own. A rail is
-a starting guess, not a cage: the dashed **re-route edges** correct a mis-route mid-flight. The
+a starting guess, not a cage: sanctioned **re-route edges** correct a mis-route mid-run. The
 `plan` rail forks by project age — `/plan-feature` for an existing codebase, `/plan-init` to author
 a brand-new one (the gateway routes a new-project fragment *to* plan-init; it never authors the
 plan itself). The full 8-rail table and all 9 re-route edges live in
 [_shared/skill-pipeline.md](_shared/skill-pipeline.md); no skill hardcodes its own routing table.
 
-```mermaid
-flowchart TD
-    V["operator vent<br>(everything on your mind about a topic)"]
-    V --> G["/user-gateway<br>intake ledger: one row per fragment,<br>routed; invents nothing of its own"]
-    G --> W{"routing web<br>(_shared/skill-pipeline.md)"}
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="_shared/routing-web-dark.svg">
+  <img alt="The routing web: operator vent through /user-gateway to eight rails — bug, do, plan, investigate, verify, trim, decide, draft — with the plan rail forking to /plan-feature (existing project) and /plan-init (brand-new project)." src="_shared/routing-web-light.svg">
+</picture>
 
-    W -->|"symptom in hand"| BUG["bug → /user-debug"]
-    W -->|"small resolved task"| DO["do → /goblin-do"]
-    W -->|"build a capability"| PLAN["plan"]
-    W -->|"a question, not work yet"| INV["investigate → /deep-research / Explore"]
-    W -->|"distrust, no symptom"| VER["verify → review-uat / user-uat /<br>user-shakedown / user-walkthrough"]
-    W -->|"plan feels bloated"| TRIM["trim → /plan-trim"]
-    W -->|"A-or-B, operator-only"| DEC["decide → parked for you"]
-    W -->|"rough thoughts"| DRAFT["draft → /user-draft → /goal"]
+The graphic shows where each rail *goes*; the table shows what a fragment *sounds like* to land there:
 
-    PLAN -->|"existing project"| PF["/plan-feature"]
-    PLAN -->|"brand-new project"| PI["/plan-init"]
-    PF --> BUILD["/plan-expedite → /build-phase → /repo-update"]
-    PI --> BUILD
-
-    BUG -.->|"designed, not a defect"| PLAN
-    VER -.->|"a check fails → symptom"| BUG
-    DO -.->|"scope outgrows the atom"| PLAN
-```
+| Rail | Sounds like | Routes to |
+|------|-------------|-----------|
+| **bug** | "X is broken / erroring" — a symptom in hand | `/user-debug` |
+| **do** | "just do X" — a resolved, small task | `/goblin-do` |
+| **plan** | "add / build capability X" — multi-step work | `/plan-feature` (existing) · `/plan-init` (new) → build |
+| **investigate** | "what's true about X? why does X happen?" | `/deep-research` · Explore sweep |
+| **verify** | "does X actually work? I don't trust X" | `/review-uat` · `/user-uat` · `/user-shakedown` · `/user-walkthrough` |
+| **trim** | "the plan feels bloated / what can we cut" | `/plan-trim` |
+| **decide** | "should we do A or B?" — an operator-only choice | surfaced, then parked |
+| **draft** | "here are rough thoughts" — wants a prompt or a goal | `/user-draft` → `/goal` |
 
 ### The core pipeline
 
