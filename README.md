@@ -18,22 +18,26 @@ Each skill name links to its `SKILL.md`.
 |------|--------|
 | **Planning** | [plan-init](plan-init/SKILL.md) · [plan-feature](plan-feature/SKILL.md) · [plan-review](plan-review/SKILL.md) · [plan-wrap](plan-wrap/SKILL.md) · [plan-merge](plan-merge/SKILL.md) · [plan-trim](plan-trim/SKILL.md) · [plan-expedite](plan-expedite/SKILL.md) |
 | **Building** | [build-step](build-step/SKILL.md) · [build-phase](build-phase/SKILL.md) · [build-queue](build-queue/SKILL.md) |
-| **Review** | [review-deep](review-deep/SKILL.md) · [review-gauntlet](review-gauntlet/SKILL.md) · [review-proof](review-proof/SKILL.md) · [review-uat](review-uat/SKILL.md) |
+| **Review** | [review-deep](review-deep/SKILL.md) · [review-gauntlet](review-gauntlet/SKILL.md) · [review-proof](review-proof/SKILL.md) · [review-uat](review-uat/SKILL.md) · [judge-ui](judge-ui/SKILL.md) |
 | **Repo & docs** | [repo-init](repo-init/SKILL.md) · [repo-sync](repo-sync/SKILL.md) · [repo-update](repo-update/SKILL.md) |
 
 **Supporting**:
 
 | Area | Skills |
 |------|--------|
-| **User & session** | [user-brainstorm](user-brainstorm/SKILL.md) · [user-debug](user-debug/SKILL.md) · [user-draft](user-draft/SKILL.md) · [user-gateway](user-gateway/SKILL.md) · [user-learn](user-learn/SKILL.md) · [user-orient](user-orient/SKILL.md) · [user-pm](user-pm/SKILL.md) · [user-shakedown](user-shakedown/SKILL.md) · [user-uat](user-uat/SKILL.md) · [user-walkthrough](user-walkthrough/SKILL.md) · [user-wrap](user-wrap/SKILL.md) · [session-wrap](session-wrap/SKILL.md) · [task-handoff](task-handoff/SKILL.md) · [research-prospect](research-prospect/SKILL.md) |
-| **Skill tooling** | [skill-eval-setup](skill-eval-setup/SKILL.md) · [skill-evolve](skill-evolve/SKILL.md) · [skill-iterate](skill-iterate/SKILL.md) |
-| **Maintenance & hygiene** | [test-prune](test-prune/SKILL.md) · [lesson-harvest](lesson-harvest/SKILL.md) · [memory-distill](memory-distill/SKILL.md) · [context-slim](context-slim/SKILL.md) |
+| **User & session** | [user-brainstorm](user-brainstorm/SKILL.md) · [user-debug](user-debug/SKILL.md) · [user-draft](user-draft/SKILL.md) · [user-gateway](user-gateway/SKILL.md) · [user-learn](user-learn/SKILL.md) · [user-orient](user-orient/SKILL.md) · [user-pm](user-pm/SKILL.md) · [user-shakedown](user-shakedown/SKILL.md) · [user-uat](user-uat/SKILL.md) · [user-walkthrough](user-walkthrough/SKILL.md) · [user-wrap](user-wrap/SKILL.md) · [user-lavishify](user-lavishify/SKILL.md) · [session-wrap](session-wrap/SKILL.md) · [task-handoff](task-handoff/SKILL.md) · [research-prospect](research-prospect/SKILL.md) |
+| **Skill tooling** | [skill-eval-setup](skill-eval-setup/SKILL.md) · [skill-evolve](skill-evolve/SKILL.md) · [skill-iterate](skill-iterate/SKILL.md) · [tier-offload](tier-offload/SKILL.md) · [tier-escalate](tier-escalate/SKILL.md) |
+| **Maintenance & hygiene** | [test-prune](test-prune/SKILL.md) · [lesson-harvest](lesson-harvest/SKILL.md) · [memory-distill](memory-distill/SKILL.md) · [context-slim](context-slim/SKILL.md) · [user-afterparty](user-afterparty/SKILL.md) |
+| **Project improvement** | [goblin-suggest](goblin-suggest/SKILL.md) · [goblin-do](goblin-do/SKILL.md) — *reference only; needs a private second-brain store + the `goblin` CLI, see [_shared/goblin-second-brain.md](_shared/goblin-second-brain.md)* |
 | **Reference** | [claude-oauth-auth](claude-oauth-auth/SKILL.md) |
 
 `_shared/` holds resources referenced by several skills — the judging doctrine
 ([judge-core.md](_shared/judge-core.md)), the skill routing web
 ([skill-pipeline.md](_shared/skill-pipeline.md)), the intake-ledger contract
-([intake-engine.md](_shared/intake-engine.md)), and the skill-scoring harness.
+([intake-engine.md](_shared/intake-engine.md)), the skill-role taxonomy the `tier-*` skills
+share ([skill-role-taxonomy.md](_shared/skill-role-taxonomy.md)), a guide to rebuilding the
+`goblin-*` second brain ([goblin-second-brain.md](_shared/goblin-second-brain.md)), and the
+skill-scoring harness.
 
 The design idea across all of these: treat agent work as a **pipeline with quality gates** — plan,
 build one step at a time, review with independent adversarial passes, and only then ship. Several
@@ -427,13 +431,16 @@ Then invoke a skill in Claude Code, e.g. `/plan-review` or `/build-step`.
 - Replace placeholders (`<workspace>`, `<project>`, `<your-org>`) with your own values.
 - Skills that reference a "control plane" or a memory index assume conventions from my workspace —
   read the `SKILL.md` and adjust, or skip those skills.
-- **The exclusions are deliberate.** A few workspace skills are intentionally not published
-  here: the `goblin-*` pair (a personal improvement-atom store), the `tier-*` pair (local-model
-  offload scanners tied to a local router), `judge-ui` (needs per-project browser adapters),
-  and `user-lavishify` (a workspace-specific rendering stack) — plus a handful of workspace
-  reference files (`shakedown-engine.md`, `task-state-schema.md`, the `docs/investigations/`
-  corpus). Published skills may mention them; treat those mentions as adaptation points, not
-  missing files.
+- **Some skills need adapting to your setup.** A few carry assumptions from my workspace: the
+  `goblin-*` pair ships as **reference only** — it needs a private "second-brain" atom store and
+  a separate `goblin` CLI, both omitted, so rebuild your own from
+  [_shared/goblin-second-brain.md](_shared/goblin-second-brain.md); `tier-offload` emits a config
+  for a local-model router and `tier-escalate` a model-tiering escalation map (adapt to your own
+  models, or skip if you run neither); `judge-ui` needs a per-project browser adapter (server
+  bring-up, auth, test IDs); and `user-lavishify` drives an annotatable-HTML rendering step. A
+  handful of workspace reference files stay unpublished (`shakedown-engine.md`,
+  `task-state-schema.md`, the `docs/investigations/` corpus); published skills may point at them —
+  treat those as adaptation points, not missing files.
 - No secrets or credentials are included.
 
 ## License

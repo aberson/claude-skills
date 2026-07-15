@@ -1,0 +1,16 @@
+{
+  "less_token_mode": true,
+  "enabled_call_sites": {
+    "skill-iterate-grader": true,
+    "skill-evolve-grader": true,
+    "review-gauntlet-style": true,
+    "review-deep-style": true,
+    "goblin-suggest-judge": true,
+    "context-slim-classifier": true,
+    "build-step-style": false
+  },
+  "effort": {
+    "skill-iterate-grader": "low",
+    "review-deep-style": "low"
+  }
+}
