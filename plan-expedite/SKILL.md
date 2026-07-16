@@ -1,6 +1,6 @@
 ---
 name: plan-expedite
-description: Chain plan-review-autofix, plan-wrap-autofix, repo-sync, and task-handoff into one autonomous prep step before /build-phase. Required arg --plan <path>. Default continues in-window — emits a /goal + /build-phase command pair (the /goal arms the Stop hook over the agent-completable build span); auto-compaction handles context (no forced /compact). Use --new-window to restore the session-wrap copy-paste prompt.
+description: Chain plan-review-autofix, plan-wrap-autofix, repo-sync, and task-handoff into one autonomous prep step before /build-phase. Required arg --plan <path>. Default continues in-window — emits a /goal + /build-phase command pair (the /goal arms the Stop hook over the agent-completable build span); auto-compaction handles context (no forced /compact). Use --new-window for a fresh-window handoff (durable current.md write via task-handoff --next-task, then /session-wrap --end renders handoff-prompt.md and prints the Pick-up-here block).
 user-invocable: true
 ---
 
@@ -13,7 +13,9 @@ autonomous step. Default output: TWO continue commands in order — first a `/go
 `/compact`, because auto-compaction handles
 context on its own when it fills and the `SessionStart` re-inject hook reloads `current.md`
 afterward. (A focused `/compact` before the long build is optional — see step 4.) Add
-`--new-window` to get the old session-wrap copy-paste prompt for a fresh window instead.
+`--new-window` to hand off to a fresh window instead: a durable `current.md` write
+(`task-handoff --next-task`), then `/session-wrap --end` renders the handoff to disk
+(`.claude/task-state/handoff-prompt.md`) and prints the Pick-up-here block.
 
 ---
 
@@ -27,7 +29,7 @@ This skill's whole reason to exist is that the operator does not want to type `/
 
 3. **Minimal between-step narration.** Between sub-skill invocations, one brief sentence is enough ("plan-review returned READY with 3 autofixes applied; invoking plan-wrap"). Do not re-describe what the next sub-skill is going to do — its SKILL.md handles that.
 
-4. **Final output is the continue command(s) (or, with `--new-window`, the transition prompt), verbatim.** On default success, the final output is TWO lines in order — a `/goal "<condition>"` line (scoped to the agent-completable automated span, per Step 4 of the chain) followed by the `/build-phase --plan <path>` command — no summary, paraphrase, or "here's what to do next" preamble. With `--new-window`, the `/session-wrap` output (with the same `/goal` line surfaced above the build line) IS the final output; emit the code-fence block as-is.
+4. **Final output is the continue command(s) (or, with `--new-window`, the Pick-up-here block), verbatim.** On default success, the final output is TWO lines in order — a `/goal "<condition>"` line (scoped to the agent-completable automated span, per Step 4 of the chain) followed by the `/build-phase --plan <path>` command — no summary, paraphrase, or "here's what to do next" preamble. With `--new-window`, the Pick-up-here block that `/session-wrap --end` prints (exact next command + digest + pointer to the rendered `handoff-prompt.md`) IS the final output; emit it as-is.
 
 ---
 
@@ -48,7 +50,7 @@ This skill's whole reason to exist is that the operator does not want to type `/
 | Arg | Required | Default | Description |
 |---|---|---|---|
 | `--plan` | yes | -- | Path to the plan.md file (e.g., `documentation/foo-plan.md`) |
-| `--new-window` | no | false | Use `session-wrap` as the final step instead of `task-handoff --next-task`. Produces a 300-word copy-paste prompt for a fresh window. Use when you always want the old behavior. |
+| `--new-window` | no | false | Fresh-window handoff: run `task-handoff --next-task` (durable `current.md` write) FIRST, then `/session-wrap --end` — the handoff is rendered to `.claude/task-state/handoff-prompt.md` and the screen shows the Pick-up-here block (exact next command + <=6-line digest + pointer; no word floor). Use when you want the next step in a fresh window. |
 
 ## Flow
 
@@ -78,8 +80,8 @@ Check for `.plan-expedite-state` JSON file in the project root (sibling to plan.
 ```
 
 `handoff_mode` is `"in-window"` (default — `task-handoff --next-task`) or `"new-window"`
-(`--new-window` flag — `session-wrap`). Recorded at run start; used by resume logic to
-invoke the correct final sub-skill on re-entry.
+(`--new-window` flag — `task-handoff --next-task` then `session-wrap --end`). Recorded at
+run start; used by resume logic to invoke the correct final sub-skill(s) on re-entry.
 
 `plan_mtime` is a numeric float — seconds since the Unix epoch, as returned by `os.path.getmtime(plan_path)` or `stat -c %Y`. No timezone, no string parsing. Comparison uses a 1-second tolerance: `abs(current_mtime - state_mtime) <= 1.0`. The tolerance accommodates filesystems with different mtime precision (NTFS records to 100ns, FAT32 rounds to 2s) and avoids spurious "plan changed" detections from format-only round-trips.
 
@@ -115,7 +117,7 @@ Read the exit code and final verdict line after each `Skill` call returns. On su
    **Default (no `--new-window`):** Invoke `task-handoff` via the Skill tool with
    `args: "--next-task build-phase"` (it writes current.md + MEMORY + push — the durable
    handoff state).
-   - Then emit the two continue commands VERBATIM as the `/plan-expedite` final output,
+   - Then emit the two continue commands verbatim as the `/plan-expedite` final output,
      BOTH inside ONE fenced code block (goal first, build command second) so the operator
      copies both in a single action — continue in the SAME window (auto-compaction handles
      context, no forced `/compact`). No preamble, no summary — the final output IS this one
@@ -153,20 +155,43 @@ Read the exit code and final verdict line after each `Skill` call returns. On su
      `/compact Focus on build-phase for [plan-name]: step list in plan.md, issue numbers
      filled, current.md has next action`.
 
-   **`--new-window` mode:** Invoke `session-wrap` via the Skill tool with
-   `args: "<plan-path>"`.
-   - Output: 300-word copy-paste transition prompt for a fresh window.
-   - Surface the SAME agent-completable `/goal "<condition>"` line (derived per the
-     Default-branch bullet above) inside that prompt, ABOVE the `/build-phase --plan
-     <plan-path>` line, so the fresh window arms the Stop hook before starting the build.
-     If `session-wrap` does not already include it, prepend the `/goal` line to the paste
-     block (prepending one line is not paraphrasing the prompt body).
-   - Emit the prompt VERBATIM as the `/plan-expedite` final output. Do not paraphrase,
-     do not summarize, do not add a preamble.
+   **`--new-window` mode:** TWO invocations, in this order — the durable write MUST land
+   before session-wrap runs because `handoff-prompt.md` is a RENDERING of `current.md`:
+   the render can only carry state already on disk. The default transition RECYCLES this
+   window: `/clear` fires the SessionStart re-inject hook (matcher: `compact|resume|clear`),
+   then the operator pastes the pair. The rendered handoff + fresh-window opener remain
+   the closed-window alternative (the hook does not fire on plain startup):
+
+   1. **Invoke `task-handoff` via the Skill tool** with `args: "--next-task build-phase"`
+      — the durable `current.md` write (finished prep lands in Completed; WIP, Next
+      Action, and Status repoint at the build; MEMORY.md updated; commit + push). Set the
+      written Next Action to the SAME agent-completable `/goal "<condition>"` line
+      (derived per the Default-branch bullet above) followed by the `/build-phase --plan
+      <plan-path>` command, goal line first, so the rendered handoff carries the armed
+      pair.
+   2. **Invoke `session-wrap` via the Skill tool** with `args: "--end <plan-path>"` —
+      `--end` explicitly, never bare: end-window is the route `--new-window` wants, and a
+      bare invocation triages and may route `continue`. session-wrap renders the handoff
+      to disk (`.claude/task-state/handoff-prompt.md`, a rendering of the `current.md`
+      just written — one source of truth) and prints the Pick-up-here block per its
+      screen contract: digest + pointer first, then numbered Step blocks — Step 1
+      `/clear`, an optional `/model <pinned-default>` step when the session's model was
+      explicitly overridden this session, and the FINAL fenced block carrying the
+      `/goal` + `/build-phase` pair verbatim (goal line first). No word floor.
+      session-wrap's route step 1 checkpoint must preserve step 1's Next Action
+      verbatim (its no-regress clause) — the pair survives into the render and into
+      the final Step block.
+   - Emit session-wrap's Pick-up-here block verbatim as the `/plan-expedite` final
+     output. Do not paraphrase, do not summarize, do not add a preamble. VERIFY the
+     `/goal` + `/build-phase` pair is the block's final fenced Step — the last lines on
+     screen are what the operator runs. If the block arrived without the pair
+     (defensive), append a final Step carrying both lines in ONE fenced code block —
+     never as bare indented lines.
    - Record `handoff_mode: "new-window"` in `.plan-expedite-state`.
 
-   The `--new-window` flag is the escape hatch for users who want the old fresh-window
-   copy-paste flow instead of continuing in-window.
+   The `--new-window` flag is the escape hatch for users who want the next step in a
+   fresh window instead of continuing in-window: durable state on disk plus a rendered
+   handoff file, not a wall of copy-paste text.
 
 ### Halt template (per BPA plan section 5 D8 — generic, no per-skill enumeration)
 
@@ -181,9 +206,9 @@ To resume: fix the cited issue, then re-run /plan-expedite --plan <path>
            (already-completed sub-skills are skipped via state inference from .plan-expedite-state)
 ```
 
-Stop without producing the final continue command / transition prompt after printing. The `.plan-expedite-state` records `halted_at: <sub-skill name>` for resume.
+Stop without producing the final continue command / Pick-up-here block after printing. The `.plan-expedite-state` records `halted_at: <sub-skill name>` for resume.
 
-Use the same five-line template regardless of which sub-skill fails (plan-review, plan-wrap, repo-sync, session-wrap); per-sub-skill diagnostic detail belongs in the cited stderr, not in `/plan-expedite`'s template.
+Use the same five-line template regardless of which sub-skill fails (plan-review, plan-wrap, repo-sync, task-handoff, session-wrap); per-sub-skill diagnostic detail belongs in the cited stderr, not in `/plan-expedite`'s template.
 
 ## Relationship to other skills
 
@@ -192,8 +217,8 @@ Use the same five-line template regardless of which sub-skill fails (plan-review
 | `/plan-init`, `/plan-feature` | Produce the plan.md `/plan-expedite` operates on |
 | `/plan-review`, `/plan-wrap` | Autofix sub-skills (Steps 7-8 of BPA plan) |
 | `/repo-sync` | Issue-sync sub-skill (Step 6) |
-| `/session-wrap` | Transition-prompt sub-skill (existing) |
-| `/build-phase` | Continues in-window from the `/goal` + `/build-phase` commands /plan-expedite emits (the `/goal` arms the Stop hook over the automated span; or, with `--new-window`, the session-wrap transition prompt carrying both) |
+| `/session-wrap` | End-window handoff sub-skill (`--new-window` only, invoked `--end` AFTER the durable `task-handoff --next-task` write; renders `handoff-prompt.md` + prints the Pick-up-here block) |
+| `/build-phase` | Continues in-window from the `/goal` + `/build-phase` commands /plan-expedite emits (the `/goal` arms the Stop hook over the automated span; or, with `--new-window`, the fresh window opens from the rendered handoff carrying both) |
 
 ## Limitations
 

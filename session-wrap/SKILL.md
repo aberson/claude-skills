@@ -14,8 +14,8 @@ pre-flight is the Git-verb router's Step A (section below).
 
 Division of labor: `/task-handoff` is the checkpoint *library* this skill calls; the
 `current.md` file contract is owned by
-`.claude/references/task-state-schema.md` (workspace reference, not published in this mirror)
-(cite it, never restate it). Phase-shipping territory (README/plan updates, issue
+`.claude/references/task-state-schema.md` (workspace reference, not published in
+this mirror; cite it, never restate it). Phase-shipping territory (README/plan updates, issue
 closing, push-everything) belongs to `/repo-update` — the git-verb router delegates
 there; this skill never duplicates it.
 
@@ -45,16 +45,19 @@ present an assumed percentage as a measurement.
 
 ## Step 0 — triage: collect, score, announce
 
-**Read `current.md` first.** Before deriving any next action or route, read
-`<git-root>/.claude/task-state/current.md` (path resolution per the schema doc; absent
-file = no recorded task — it gets created from the template on the first route write).
-`current.md` plus git is the state; conversation prose is not. Every next action this
-skill writes or renders derives from `current.md`, never in parallel from prose.
+**Read this session's own state first.** Before deriving any next action or route, read
+**this session's** `sessions/<session-id>.md` (the session UUID from your scratchpad path;
+fallback to the derived `current.md` rollup, then the freshest session file — resolution +
+the per-session model are owned by the schema doc). Reading your OWN session file, not the
+shared `current.md` rollup, is what keeps a concurrent window's task from surfacing as this
+session's state. Absent file = no recorded task — it gets created on the first route write.
+That file plus git is the state; conversation prose is not. Every next action this skill
+writes or renders derives from it, never in parallel from prose.
 
 Collect four signals:
 
 **(a) Context utilization.** Chosen signal (decision doc:
-`docs/investigations/context-signal-spike.md`):
+[`docs/investigations/context-signal-spike.md`](../../../docs/investigations/context-signal-spike.md)):
 the `message.usage` sum (`input_tokens + cache_creation_input_tokens +
 cache_read_input_tokens`) of the LAST top-level main-chain assistant entry in the
 session transcript JSONL. Run the reference implementation rather than reimplementing
@@ -153,7 +156,7 @@ Everything in `clear-next`, same order — including step 1's
 (before the render, so their outcomes are renderable):
 
 - **Full memory pass — read-then-report (invariants 1 and 4).** Read MEMORY.md
-  (`~\.claude\projects\<workspace>\memory\MEMORY.md`) fully
+  (`~/.claude/projects/<project-slug>/memory/MEMORY.md`) fully
   (if the first Read reports a partial load, continue with offset reads until the
   whole file is covered — a partial read cannot honestly claim "Read MEMORY.md"). For
   every topic touched this session, state `existing entry for <topic> was
@@ -211,11 +214,11 @@ delegate path = the intended `/repo-update` invocation + the trigger evidence.
 This ask is the single sanctioned (y/n) gate in this skill. The checks:
 
     # 1. Foreign state file at the workspace root
-    Get-ChildItem -Force <git-root>\.plan-expedite-state.* | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
+    Get-ChildItem -Force <workspace-root>\.plan-expedite-state.* | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
     # 2. Worktrees beyond the main checkout, then two activity probes per hit
     git worktree list
     git log -1 --format=%cr <worktree-branch>
-    Get-Item <git-root>\.git\worktrees\*\index -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
+    Get-Item <repo-root>\.git\worktrees\*\index -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-24) }
     # 3. Cross-repo/foreign edits
     git status --porcelain
     # 4. Foreign commits: reachable from other refs, not from this HEAD
@@ -251,15 +254,17 @@ files is the ALWAYS-RUN base action unless explicitly delegated:
   the vacuous all-DONE of a step-less pointer plan), OR a build-phase
   completion report was produced this session. Action: invoke `/repo-update`
   via the Skill tool — it owns shipping (README/docs updates, commit, push,
-  posterity issue); this skill duplicates none of that work, and its commit
-  sweeps in the `current.md` written at route step 1. If `/repo-update` fails
+  posterity issue); this skill duplicates none of that work. (Task-state is now
+  gitignored, so nothing sweeps in `current.md`; route step 1's session-file write
+  is already durable on disk.) If `/repo-update` fails
   partway, run the base action below so nothing is stranded, and surface the
   repo-update failure in the digest.
 - **Base action** — everything else. Detection: the delegate test above did
   not match. Action: scoped `git add` of the session edit set (as defined in
-  check 3) **plus `current.md` itself** + commit + push, EXECUTED by
-  default — this is the carrying commit route step 1 deferred
-  (`--loop --no-commit`). A clean tree is a LEGAL outcome — e.g. a boundary
+  check 3) + commit + push, EXECUTED by default. (Task-state is now gitignored —
+  `sessions/*.md` and the derived `current.md` are NOT committed; route step 1's
+  session-file write already durably landed on disk, so there is no
+  carrying-commit of state to defer.) A clean tree is a LEGAL outcome — e.g. a boundary
   write earlier this turn (plan-expedite's `--next-task`) already carried the
   commit+push; skip the empty commit and report `nothing to commit` in Step D.
   Clean but AHEAD of origin (an earlier push failed): still push, and report
@@ -279,7 +284,7 @@ line to the digest —
 - plan-review ran this session (in `current.md` Completed or this
   conversation), or the plan carries a fresh review marker → recommend
   `/repo-sync`. Order guard: never repo-sync before plan-review
-  (`.claude/rules/plan-and-issue-flow.md`).
+  ([`.claude/rules/plan-and-issue-flow.md`](../../rules/plan-and-issue-flow.md)).
 - review status unknown or absent → treat as NOT reviewed; recommend
   `/plan-review` first.
 
@@ -323,24 +328,51 @@ just-written `current.md`; if the render needs a fact `current.md` lacks, write
 
 The screen output of `clear-next` and `end-window` is exactly this — the ONLY
 required reading (plus, when `--spawn` was typed, one trailing spawn-status line —
-a fired-mechanism report, not part of the render):
+a fired-mechanism report, not part of the render). Digest first, numbered Step
+blocks last — the final step's fenced block is the LAST thing on screen, so what to
+run next is always the bottom of the output (operator contract, 2026-07-16):
 
     ## Pick up here
-    <exact next command(s), verbatim>
-
     <digest: <=6 lines>
     Full handoff: .claude/task-state/handoff-prompt.md
 
-- **Exact next command(s):** `clear-next` -> `/clear` — unless any router
-  segment reads `ask-first pending`; then the next command is the ask response
-  (Git-verb router Step A), never `/clear` past the open gate. `end-window` -> the
-  fresh-window opener, verbatim with an absolute path, e.g.
-  `Read <project-root>\.claude\task-state\handoff-prompt.md fully, verify git state per its first instruction, then execute its Next Action.`
-- **Digest (<=6 lines):** route + signal values; the git verb executed (repo, branch,
-  SHA); memory/docs updates by name; invariant flags (`MEMORY.md over budget`,
-  `friction catalog stale`, ...).
-- **One pointer line** to `handoff-prompt.md`. Everything longer lives in the render,
-  not on screen.
+    Step 1 — <label>:
+    ```
+    <command>
+    ```
+    Step N — <label>:
+    ```
+    <final command(s)>
+    ```
+
+- **Digest (<=6 lines), then the pointer line, directly under the heading:** route +
+  signal values; the git verb executed (repo, branch, SHA); memory/docs updates by
+  name; invariant flags (`MEMORY.md over budget`, `friction catalog stale`, ...).
+  Exactly ONE pointer line to `handoff-prompt.md`. Everything longer lives in the
+  render, not on screen.
+- **One fenced code block per step; steps split at observation points** (per
+  [`command-presentation.md`](../../rules/command-presentation.md)): `/clear` is its
+  own step; a `/model` reset is its own step; an atomic command pair (`/goal` +
+  `/build-phase`) shares ONE block, goal line first. Invariant 5 governs the INSIDE
+  of blocks (no fence ever nests within a block or within the render file) — using
+  fenced blocks on screen is the norm, not a violation.
+- **`clear-next`:** a single step whose block is `/clear` (the SessionStart hook
+  re-injects `current.md` after the clear) — unless any router segment reads
+  `ask-first pending`; then the steps are replaced by the ask response (Git-verb
+  router Step A), never a step past the open gate.
+- **`end-window` with a runnable Next Action pair** (the just-written `current.md`
+  Next Action is a paste-ready command pair, e.g. plan-expedite's `/goal` +
+  `/build-phase`): Step 1 `/clear` (recycle this window; the hook re-injects state);
+  then, ONLY when the session's model was explicitly overridden this session (e.g.
+  Fable for plan authoring — `/clear` keeps the window's session model), a
+  `/model <pinned-default>` step; then the FINAL step: the pair verbatim in one
+  block. The digest carries a one-line closed-window alternative:
+  `closing instead? fresh-window opener: Read <abs-path>\handoff-prompt.md fully, verify git state per its first instruction, then execute its Next Action.`
+- **`end-window` without a runnable pair** (wait step, operator handoff, done-for-day
+  with nothing paste-ready): the single step is the fresh-window opener, verbatim
+  with an absolute path — never `/clear` (the SessionStart hook does not fire on
+  plain startup, and nothing runnable follows the clear), e.g.
+  `Read <git-root>\.claude\task-state\handoff-prompt.md fully, verify git state per its first instruction, then execute its Next Action.`
 
 There is NO minimum length anywhere in this skill — no word-count floor for the
 digest, the render, or any block. Terseness and specificity are coupled constraints;
@@ -491,7 +523,7 @@ close this window without losing anything?".
   salvage sweep — what `end-window`'s sweep (section above) WOULD find: uncommitted
   work, unpushed commits, un-checkpointed or git-inconsistent `current.md` state,
   findings and TODOs written nowhere. Freshness follows the staleness threshold owned
-  by `task-state-schema.md`; consistency is
+  by [`task-state-schema.md`](../../references/task-state-schema.md); consistency is
   Step 0's own Session-SHA-vs-HEAD signal.
 - **Prints, then STOPS.** The report below is the entire output. Zero writes, zero
   git mutations: no `current.md` write, no render, no git verb, no `task-handoff` or
@@ -531,13 +563,15 @@ contract, and an empty preview reads exactly `nothing`.
 
 ## Maintenance
 
-The `evals/` suite targets THIS triage contract (rebuilt 2026-07-12, #297;
-`--advise` category added 2026-07-13, #304): **26 assertions** across **6
-categories** in `evals/evals.json` (passing threshold **24/26**), **5 scenarios** in
-`evals/test_scenarios.json` (one per route, the signal-absent fail-loud path, and the
-`--advise` SAFE-vs-WRAP close-check), and a golden corpus of 8 goods + 26
+The `evals/` suite targets THIS triage contract (rebuilt 2026-07-12, Step 7 / #297;
+`--advise` category added 2026-07-13, Step 3 / #304): **26 assertions** across **6
+categories** in `evals/evals.json` (passing threshold **24/26**), **6 scenarios** in
+`evals/test_scenarios.json` (one per route, the signal-absent fail-loud path, the
+`--advise` SAFE-vs-WRAP close-check, and the end-window runnable-pair handoff), and a golden corpus of 9 goods + 27
 single-defect bads under `evals/golden/` (manifest.json maps each bad to the one
-assertion it trips). Any edit that changes an output contract here (triage line,
+assertion it trips). v3.2 (2026-07-16) reshaped the Pick-up-here block (digest first,
+fenced Step blocks last, end-window pair/no-pair branches) — assertions 7/8/10 and
+every block-bearing golden updated together. Any edit that changes an output contract here (triage line,
 route output, Pick-up-here block, render invariants, advise verdict banner or loss
 report) must update the affected assertions and goldens in the same diff, keeping
 this footer's numbers equal to `evals.json`'s. Terseness and specificity assertions
