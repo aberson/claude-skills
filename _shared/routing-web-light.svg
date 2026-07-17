@@ -1,27 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 964 576" font-family="ui-monospace,'Cascadia Code','SF Mono',Consolas,'Roboto Mono',monospace" role="img" aria-label="The routing web: operator vent through user-gateway to eight rails, with the plan rail forking to plan-feature (existing project) and plan-init (new project)">
   <defs>
-    <marker id="ar-light" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#C0C9DA"/></marker>
+    <marker id="ar-light" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#c0c9da"/></marker>
     <filter id="sh-light" x="-20%" y="-40%" width="140%" height="180%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(20,26,40,.16)"/></filter>
   </defs>
   <style>
-    .bg{fill:#FFFFFF;stroke:#D4DBE8;stroke-width:1.5}
-    .fan{fill:none;stroke:#C0C9DA;stroke-width:1.7}
-    .fork{fill:none;stroke:#3355E0;stroke-width:1.7}
-    .rail rect{fill:#FFFFFF;stroke:#C0C9DA;stroke-width:1.4;filter:url(#sh-light)}
-    .rail-name{fill:#3355E0;font-size:16px;font-weight:600}
-    .rail-dest{fill:#6E778C;font-size:11.5px}
-    .rail-sub{fill:#B6771F;font-size:11.5px}
-    .innode rect{fill:#FFFFFF;stroke:#C0C9DA;stroke-width:1.4;filter:url(#sh-light)}
-    .innode.gw rect{stroke:#3355E0;stroke-width:1.7}
-    .in-t{fill:#454E62;font-size:13px}
-    .gw-cmd{fill:#3355E0;font-size:15px;font-weight:600}
-    .gw-sub{fill:#6E778C;font-size:10.5px}
-    .hub-t{fill:#171B24;font-size:14px;font-weight:600}
-    .hub-sub{fill:#6E778C;font-size:10.5px}
-    .chip rect{fill:#E4E9FB;stroke:#3355E0;stroke-width:1.2}
-    .chip-cmd{fill:#3355E0;font-size:12px;font-weight:600}
-    .chip-lbl{fill:#6E778C;font-size:9.5px}
-    .title{fill:#6E778C;font-size:11px;letter-spacing:.12em}
+    .bg{fill:#ffffff;stroke:#d4dbe8;stroke-width:1.5}
+    .fan{fill:none;stroke:#c0c9da;stroke-width:1.7}
+    .fork{fill:none;stroke:#3355e0;stroke-width:1.7}
+    .rail rect{fill:#ffffff;stroke:#c0c9da;stroke-width:1.4;filter:url(#sh-light)}
+    .rail-name{fill:#3355e0;font-size:16px;font-weight:600}
+    .rail-dest{fill:#6e778c;font-size:11.5px}
+    .rail-sub{fill:#b6771f;font-size:11.5px}
+    .innode rect{fill:#ffffff;stroke:#c0c9da;stroke-width:1.4;filter:url(#sh-light)}
+    .innode.gw rect{stroke:#3355e0;stroke-width:1.7}
+    .in-t{fill:#454e62;font-size:13px}
+    .gw-cmd{fill:#3355e0;font-size:15px;font-weight:600}
+    .gw-sub{fill:#6e778c;font-size:10.5px}
+    .hub-t{fill:#171b24;font-size:14px;font-weight:600}
+    .hub-sub{fill:#6e778c;font-size:10.5px}
+    .chip rect{fill:#e4e9fb;stroke:#3355e0;stroke-width:1.2}
+    .chip-cmd{fill:#3355e0;font-size:12px;font-weight:600}
+    .chip-lbl{fill:#6e778c;font-size:9.5px}
+    .title{fill:#6e778c;font-size:11px;letter-spacing:.12em}
   </style>
   <rect class="bg" x="6" y="6" width="952" height="564" rx="16"/>
   <text class="title" x="28" y="40">THE ROUTING WEB  ·  ONE VENT  →  8 RAILS</text>

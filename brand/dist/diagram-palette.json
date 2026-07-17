@@ -1,0 +1,29 @@
+{
+  "$generated": "on-brand - DO NOT EDIT. Source: brand/tokens.json (+ modes.dark.json overlay). Regenerate with `onbrand build`.",
+  "light": {
+    "canvas": "#ffffff",
+    "canvas-border": "#d4dbe8",
+    "node-fill": "#ffffff",
+    "node-stroke": "#c0c9da",
+    "link": "#c0c9da",
+    "spine-accent": "#3355e0",
+    "label": "#6e778c",
+    "title-strong": "#171b24",
+    "text-muted": "#454e62",
+    "chip-highlight": "#e4e9fb",
+    "warning": "#b6771f"
+  },
+  "dark": {
+    "canvas": "#161c26",
+    "canvas-border": "#29313f",
+    "node-fill": "#161c26",
+    "node-stroke": "#384153",
+    "link": "#384153",
+    "spine-accent": "#6e9bff",
+    "label": "#7c8598",
+    "title-strong": "#e8ecf4",
+    "text-muted": "#a7b0c2",
+    "chip-highlight": "#1b2540",
+    "warning": "#e3a542"
+  }
+}

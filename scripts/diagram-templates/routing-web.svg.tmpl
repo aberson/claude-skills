@@ -1,49 +1,49 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 964 576" font-family="ui-monospace,'Cascadia Code','SF Mono',Consolas,'Roboto Mono',monospace" role="img" aria-label="The routing web: operator vent through user-gateway to eight rails, with the plan rail forking to plan-feature (existing project) and plan-init (new project)">
   <defs>
-    <marker id="ar-dark" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#384153"/></marker>
-    <filter id="sh-dark" x="-20%" y="-40%" width="140%" height="180%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0,0,0,.5)"/></filter>
+    <marker id="ar-{{theme}}" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="{{link}}"/></marker>
+    <filter id="sh-{{theme}}" x="-20%" y="-40%" width="140%" height="180%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="{{shadow}}"/></filter>
   </defs>
   <style>
-    .bg{fill:#161c26;stroke:#29313f;stroke-width:1.5}
-    .fan{fill:none;stroke:#384153;stroke-width:1.7}
-    .fork{fill:none;stroke:#6e9bff;stroke-width:1.7}
-    .rail rect{fill:#161c26;stroke:#384153;stroke-width:1.4;filter:url(#sh-dark)}
-    .rail-name{fill:#6e9bff;font-size:16px;font-weight:600}
-    .rail-dest{fill:#7c8598;font-size:11.5px}
-    .rail-sub{fill:#e3a542;font-size:11.5px}
-    .innode rect{fill:#161c26;stroke:#384153;stroke-width:1.4;filter:url(#sh-dark)}
-    .innode.gw rect{stroke:#6e9bff;stroke-width:1.7}
-    .in-t{fill:#a7b0c2;font-size:13px}
-    .gw-cmd{fill:#6e9bff;font-size:15px;font-weight:600}
-    .gw-sub{fill:#7c8598;font-size:10.5px}
-    .hub-t{fill:#e8ecf4;font-size:14px;font-weight:600}
-    .hub-sub{fill:#7c8598;font-size:10.5px}
-    .chip rect{fill:#1b2540;stroke:#6e9bff;stroke-width:1.2}
-    .chip-cmd{fill:#6e9bff;font-size:12px;font-weight:600}
-    .chip-lbl{fill:#7c8598;font-size:9.5px}
-    .title{fill:#7c8598;font-size:11px;letter-spacing:.12em}
+    .bg{fill:{{canvas}};stroke:{{canvas-border}};stroke-width:1.5}
+    .fan{fill:none;stroke:{{link}};stroke-width:1.7}
+    .fork{fill:none;stroke:{{spine-accent}};stroke-width:1.7}
+    .rail rect{fill:{{node-fill}};stroke:{{node-stroke}};stroke-width:1.4;filter:url(#sh-{{theme}})}
+    .rail-name{fill:{{spine-accent}};font-size:16px;font-weight:600}
+    .rail-dest{fill:{{label}};font-size:11.5px}
+    .rail-sub{fill:{{warning}};font-size:11.5px}
+    .innode rect{fill:{{node-fill}};stroke:{{node-stroke}};stroke-width:1.4;filter:url(#sh-{{theme}})}
+    .innode.gw rect{stroke:{{spine-accent}};stroke-width:1.7}
+    .in-t{fill:{{text-muted}};font-size:13px}
+    .gw-cmd{fill:{{spine-accent}};font-size:15px;font-weight:600}
+    .gw-sub{fill:{{label}};font-size:10.5px}
+    .hub-t{fill:{{title-strong}};font-size:14px;font-weight:600}
+    .hub-sub{fill:{{label}};font-size:10.5px}
+    .chip rect{fill:{{chip-highlight}};stroke:{{spine-accent}};stroke-width:1.2}
+    .chip-cmd{fill:{{spine-accent}};font-size:12px;font-weight:600}
+    .chip-lbl{fill:{{label}};font-size:9.5px}
+    .title{fill:{{label}};font-size:11px;letter-spacing:.12em}
   </style>
   <rect class="bg" x="6" y="6" width="952" height="564" rx="16"/>
   <text class="title" x="28" y="40">THE ROUTING WEB  ·  ONE VENT  →  8 RAILS</text>
   <g>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,62 470,62"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,126 470,126"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,190 470,190"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,254 470,254"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,318 470,318"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,382 470,382"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,446 470,446"/>
-    <path class="fan" marker-end="url(#ar-dark)" d="M212,286 C 340,286 352,510 470,510"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,62 470,62"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,126 470,126"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,190 470,190"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,254 470,254"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,318 470,318"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,382 470,382"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,446 470,446"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M212,286 C 340,286 352,510 470,510"/>
   </g>
   <path class="fork" d="M800,190 C 804,190 802,175 808,175"/><path class="fork" d="M800,190 C 804,190 802,213 808,213"/>
   
     <g class="innode vent"><rect x="28" y="110" width="152" height="38" rx="10"/>
       <text class="in-t" x="44" y="134">operator vent</text></g>
-    <path class="fan" marker-end="url(#ar-dark)" d="M104,148 L104,168"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M104,148 L104,168"/>
     <g class="innode gw"><rect x="28" y="168" width="200" height="60" rx="12"/>
       <text class="gw-cmd" x="44" y="194">/user-gateway</text>
       <text class="gw-sub" x="44" y="212">one routed row per fragment</text></g>
-    <path class="fan" marker-end="url(#ar-dark)" d="M128,228 L128,258"/>
+    <path class="fan" marker-end="url(#ar-{{theme}})" d="M128,228 L128,258"/>
     <g class="innode hub"><rect x="44" y="258" width="168" height="56" rx="12"/>
       <text class="hub-t" x="60" y="282">routing web</text>
       <text class="hub-sub" x="60" y="300">skill-pipeline.md</text></g>

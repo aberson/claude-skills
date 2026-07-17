@@ -1,0 +1,109 @@
+{
+  "$description": "on-brand house-docs preset — dark-mode overlay. Same shape as tokens.json; overrides COLOR values only (documented convention, plan.md §4). color.diagram is LIFTED from the hand-baked *-dark.svg diagram files; the non-diagram overrides mirror the default preset.",
+  "$extensions": {
+    "onbrand": {
+      "schemaVersion": 1
+    }
+  },
+  "color": {
+    "$type": "color",
+    "primitive": {
+      "brand": {
+        "1": { "$value": "#0e1523" },
+        "2": { "$value": "#121a2b" },
+        "3": { "$value": "#16223a" },
+        "4": { "$value": "#1b2b4a" },
+        "5": { "$value": "#213659" },
+        "6": { "$value": "#2a4370" },
+        "7": { "$value": "#365490" },
+        "8": { "$value": "#4568ae" },
+        "9": { "$value": "#5c8ae6" },
+        "10": { "$value": "#6e9bff" },
+        "11": { "$value": "#93b4f2" },
+        "12": { "$value": "#dbe6fb" }
+      },
+      "neutral": {
+        "1": { "$value": "#14181f" },
+        "2": { "$value": "#171c24" },
+        "3": { "$value": "#1d232d" },
+        "4": { "$value": "#232a35" },
+        "5": { "$value": "#2a323e" },
+        "6": { "$value": "#333c4a" },
+        "7": { "$value": "#40495a" },
+        "8": { "$value": "#566070" },
+        "9": { "$value": "#6b7587" },
+        "10": { "$value": "#7c8698" },
+        "11": { "$value": "#a4adbc" },
+        "12": { "$value": "#edeff3" }
+      }
+    },
+    "semantic": {
+      "bg": { "$value": "#14181f" },
+      "surface": { "$value": "#1d232d" },
+      "text": { "$value": "#edeff3" },
+      "text-muted": { "$value": "#a4adbc" },
+      "border": { "$value": "#333c4a" },
+      "accent": { "$value": "#6e9bff" },
+      "code-bg": { "$value": "#232a35" },
+      "shadow-color": { "$value": "#00000080" }
+    },
+    "status": {
+      "success": {
+        "fg": { "$value": "#7ee2a8" },
+        "bg": { "$value": "#12301f" }
+      },
+      "warning": {
+        "fg": { "$value": "#e6b95c" },
+        "bg": { "$value": "#33270e" }
+      },
+      "danger": {
+        "fg": { "$value": "#f2a49c" },
+        "bg": { "$value": "#3a1715" }
+      },
+      "info": {
+        "fg": { "$value": "#8ab8f8" },
+        "bg": { "$value": "#14263f" }
+      }
+    },
+    "chart": {
+      "categorical": {
+        "1": { "$value": "#6e9bff" },
+        "2": { "$value": "#e8975a" },
+        "3": { "$value": "#5fbd88" },
+        "4": { "$value": "#ee8277" },
+        "5": { "$value": "#b195dd" },
+        "6": { "$value": "#54bdbd" },
+        "7": { "$value": "#d9b24a" },
+        "8": { "$value": "#e08ebc" }
+      },
+      "sequential": {
+        "1": { "$value": "#16223a" },
+        "2": { "$value": "#1f3054" },
+        "3": { "$value": "#2c4576" },
+        "4": { "$value": "#3f5d97" },
+        "5": { "$value": "#5c7fc0" },
+        "6": { "$value": "#8aa8e0" },
+        "7": { "$value": "#c4d5f5" }
+      },
+      "chrome": {
+        "grid": { "$value": "#2a323e" },
+        "axis": { "$value": "#7c8698" },
+        "label": { "$value": "#b9c0cc" },
+        "tooltip-bg": { "$value": "#1d232d" }
+      }
+    },
+    "diagram": {
+      "canvas": { "$value": "#161c26" },
+      "canvas-border": { "$value": "#29313f" },
+      "node-fill": { "$value": "#161c26" },
+      "node-stroke": { "$value": "#384153" },
+      "link": { "$value": "#384153" },
+      "spine-accent": { "$value": "#6e9bff" },
+      "label": { "$value": "#7c8598" },
+      "title-strong": { "$value": "#e8ecf4" },
+      "text-muted": { "$value": "#a7b0c2" },
+      "chip-highlight": { "$value": "#1b2540" },
+      "warning": { "$value": "#e3a542" }
+    }
+  }
+}
