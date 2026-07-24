@@ -4,13 +4,19 @@ A collection of [Claude Code](https://docs.anthropic.com/claude-code) skills for
 reviewing, and shipping software with AI agents. These are the real workflow skills I use day to day,
 lightly generalized for sharing.
 
+> **Multi-model:** These skills now ship with GPT peer variants: Claude remains the primary provider,
+> with GPT-5.6 Sol or a tier-matched GPT peer available as fallback. See the
+> [multi-model operator guide](documentation/MULTI_MODEL_GUIDE.md). Set `OPENAI_API_KEY` to activate
+> the GPT path; the existing Claude-only path is unchanged.
+
 > Extracted from a personal workspace. Paths and identifiers are generalized to placeholders
 > (`<workspace>`, `<project>`, `<your-org>`). A few skills reference personal conventions — a
 > workspace "control plane" and a file-based memory system — that you would adapt to your own setup.
 
 ## What's inside
 
-Each skill name links to its `SKILL.md`.
+Each skill name links to its `SKILL.md`. Every skill also has a `## Multi-model` section identifying
+its GPT variant path.
 
 **Core pipeline** — plan → build → review → ship:
 
@@ -42,6 +48,27 @@ skill-scoring harness.
 The design idea across all of these: treat agent work as a **pipeline with quality gates** — plan,
 build one step at a time, review with independent adversarial passes, and only then ship. Several
 skills use multi-agent fan-out (parallel reviewers, judge panels, generate-then-grade loops).
+
+## Router
+
+The router at `.claude/lib/skill-router.ps1` dispatches a skill to Claude or its GPT peer.
+
+| Claude tier | GPT peer |
+|---|---|
+| Fable | `gpt-5.6-sol` |
+| Opus | `gpt-5.5` |
+| Sonnet | `gpt-5.4` |
+| Haiku | `gpt-5.4-mini` |
+
+```powershell
+pwsh -File .claude/lib/skill-router.ps1 -Model gpt -Skill <name>
+```
+
+## Current status
+
+- 47/47 skills are GPT-capable; 37 calibration tests pass.
+- Phase 5 automated Steps 28, 29, and 31 are complete.
+- The operator smoke test (Step 30) and sign-off (Step 32) remain pending.
 
 ## Workflows
 
